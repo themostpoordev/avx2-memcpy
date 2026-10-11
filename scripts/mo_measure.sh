@@ -28,6 +28,15 @@ MINWIN="${7:-3}"
 
 REPS="${REPS:-5}"
 STABLE_PCT="${STABLE_PCT:-0.5}"
+# RUN_TO_CAP=1 disables the early stable stop and always runs MAXWIN windows.
+#
+# Reason (measured): the 0.5% stop can terminate while a deeper floor is still
+# undiscovered. v3 stopped at window 5 on a 0.04% change, and znver2's naive
+# 4 KB key sat flat for six windows and then improved 20% at window 9. Because
+# min_of_mins only ever decreases with more windows, campaigns that stop at
+# different window counts are NOT comparable with each other, so cross-target
+# work runs to the cap and per-key stability is published instead.
+RUN_TO_CAP="${RUN_TO_CAP:-0}"
 BUDGET="${BUDGET:-0.05}"
 WARMUP="${WARMUP:-2}"
 ITERS="${ITERS:-100}"
@@ -97,6 +106,7 @@ stability() {
     ' "$LOG"
 }
 
+stable=0
 win=1
 while [ "$win" -le "$MAXWIN" ]; do
     printf '# WINDOW %d %s\n' "$win" "$(date +%s)" >> "$LOG"
@@ -112,22 +122,27 @@ while [ "$win" -le "$MAXWIN" ]; do
     nmig=$(grep -c 'migrated=1' "$LOG" || true)
     echo "window $nwin: $nrep rep lines total, $nmig migrated rep(s) dropped"
 
-    if [ "$nwin" -ge "$MINWIN" ]; then
+    if [ "$nwin" -ge "$MINWIN" ] && [ "$RUN_TO_CAP" != "1" ]; then
         sres=$(stability "$nwin")
         chg=$(printf '%s' "$sres" | cut -d" " -f1)
         wkey=$(printf '%s' "$sres" | cut -d" " -f2)
         echo "  cumulative min_of_mins change vs previous window: ${chg}% (worst key: ${wkey}; stable at <=${STABLE_PCT}%)"
         if awk -v c="$chg" -v t="$STABLE_PCT" 'BEGIN { exit !(c <= t) }'; then
             echo "  STABLE -> stopping at $nwin windows"
+            stable=1
             break
         fi
+    elif [ "$RUN_TO_CAP" = "1" ] && [ "$nwin" -ge "$MINWIN" ]; then
+        sres=$(stability "$nwin")
+        echo "  cumulative change vs previous window: $(printf '%s' "$sres" | cut -d" " -f1)% (worst key: $(printf '%s' "$sres" | cut -d" " -f2)); RUN_TO_CAP=1, continuing"
     fi
     win=$((win + 1))
 done
 
 nwin=$(grep -c '^# WINDOW' "$LOG" || true)
-if [ "$nwin" -ge "$MAXWIN" ]; then
+if [ "$stable" = "0" ] && [ "$nwin" -ge "$MAXWIN" ]; then
     echo "  note: reached MAXWIN=$MAXWIN without meeting the ${STABLE_PCT}% stability rule;"
-    echo "        this is reported as an unstable measurement, not a clean one."
+    echo "        per-key stability is published by mo_analyze.sh; keys still moving"
+    echo "        are unusable for a claim, not silently averaged in."
 fi
 echo "log: $LOG ($nwin windows)"

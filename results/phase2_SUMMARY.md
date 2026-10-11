@@ -8,6 +8,60 @@ Pin: `taskset -c 2`, CPU verified with `sched_getcpu()` inside the PMU window
 Clock: `core_ghz` snapshot per run (2.99–3.14 GHz observed); `cycles_per_byte`
 comes from the PMU cycles counter only, never from TSC.
 
+## Kernel 1 re-evaluated under the approved min_of_mins protocol (supersedes the median numbers below)
+
+9 windows x 5 reps, pinned `taskset -c 2`, 13 sizes, 0 migrated reps. Full report:
+`results/phase2_naive_analysis.txt` (median-based predecessor preserved as
+`results/phase2_naive_analysis.median_based.txt`). Per-target CSVs:
+`results/phase2_naive_{znver2,znver3,v3}.csv`.
+
+**Kernel 1 vs kernel 1.** `naive` and `ref_scalar` hold the same byte loop with
+byte-identical instruction streams (`results/codegen_diff_naive_*.diff`), so their
+difference is pure measurement artefact. Measured in the same windows, that
+artefact is **not** uniform:
+
+| size | znver2 | znver3 | v3 |
+|--:|--:|--:|--:|
+| 16 B | 12.52% | 0.01% | 4.40% |
+| 32 B | 1.95% | 4.96% | 2.35% |
+| 64 B | 10.90% | 0.86% | 1.17% |
+| 128 B | 0.00% | 1.97% | 0.00% |
+| 256 B | 0.00% | 2.86% | 0.00% |
+| 512 B | 0.05% | **25.33%** | 0.00% |
+| 1 KB | 0.00% | **21.15%** | 0.00% |
+| 4 KB | 0.05% | 0.15% | **25.15%** |
+| 16 KB | 0.98% | 0.19% | 0.33% |
+| 64 KB | 1.63% | 2.86% | 2.26% |
+| 256 KB | 0.06% | 4.56% | 1.23% |
+| 1 MB | 0.00% | 0.16% | 0.10% |
+| 4 MB | 4.76% | 4.00% | 1.75% |
+
+**Finding — the mandated 1.5% floor is not safe at every size.** Where the band
+is <=0.06% (znver2 at 128 B-1 MB) a 1.5% claim is comfortable. Where the band is
+21-25% (znver3 at 512 B-1 KB, v3 at 4 KB) a 1.5% "win" would be pure artefact.
+The cause is visible in the design: the identical kernels are measured at
+different positions inside each rep, and at these sizes one rep is only
+nanoseconds, so a burst that lands between them is charged to whichever ran
+during it. `scripts/mo_analyze.sh` therefore prints **both** verdicts - the
+mandated rule-3 verdict at 1.5% and a band-aware verdict at
+`max(1.5%, null band)` - and never hides the difference. **Recommendation: adopt
+the band-aware verdict as the claim rule, per (target, size).**
+
+**Rule 2 outcome, kernel 1 (znver2).** 12 of 13 sizes stabilised (last-two-window
+change +0.0000%); the floors were reached at windows 1-7. One size did **not**:
+4 KB sat flat for six windows and then found a 20.05% deeper floor at window 9
+(1617.4 -> 1293.1 ns). That size is marked `UNSTABLE` and is unusable for a
+claim under rule 2 - and it is the same 4 KB key whose bimodality cost us the
+pinning experiment. Consequence: the 0.5% early-stop can terminate while a
+deep floor is still undiscovered, so cross-target campaigns run to the 9-window
+cap (`RUN_TO_CAP=1`) and publish per-key stability instead of assuming it.
+
+**Kernel 1 vs glibc (min_of_mins, znver2).** glibc wins every size; the ratio
+`ours:glibc` runs 0.38x (16 B) to 0.03x (1 KB-4 KB), i.e. glibc is up to ~33x
+faster than the byte loop at L1-resident sizes. glibc is ifunc-dispatched AVX2,
+so this is the expected floor-to-ceiling gap, and it is the number the ladder
+exists to close.
+
 ## Ladder progress
 
 | kernel | commit | verified | CSV |
