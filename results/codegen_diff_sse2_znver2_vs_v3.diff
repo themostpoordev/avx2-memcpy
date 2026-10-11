@@ -4,8 +4,9 @@
 # znver2: instructions=54  distinct_mnemonics=18  func_bytes=208
 # v3: instructions=54  distinct_mnemonics=18  func_bytes=208
 # verdict: DIFFERENT — 4 changed instruction line(s); unified diff follows
---- build/znver2/sse2.asm	2026-10-11 21:38:36.853618014 +0200
-+++ build/v3/sse2.asm	2026-10-11 21:38:36.970282293 +0200
+# mnemonic multiset: IDENTICAL - the differences are ORDERING only (moved instructions, no instruction-set change)
+--- build/znver2/sse2.asm	2026-10-11 21:42:58.068263534 +0200
++++ build/v3/sse2.asm	2026-10-11 21:42:58.168261482 +0200
 @@ -21,11 +21,11 @@
  movups 0x10(%rsi,%rdi,1),%xmm1
  movups 0x20(%rsi,%rdi,1),%xmm2

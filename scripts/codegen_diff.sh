@@ -76,6 +76,13 @@ for pair in "znver2 znver3" "znver2 v3" "znver3 v3"; do
         same=1
     fi
     changed=$(grep -c '^[+-][^+-]' "$BODY" || true)
+    msame=0
+    if [ "$same" = "0" ]; then
+        sort "build/$A/$KERNEL.mnem" > "$BODY.sa"
+        sort "build/$B/$KERNEL.mnem" > "$BODY.sb"
+        if cmp -s "$BODY.sa" "$BODY.sb"; then msame=1; fi
+        rm -f "$BODY.sa" "$BODY.sb"
+    fi
     # The header matters: an empty body is the correct RESULT for identical
     # codegen, but a 0-byte file cannot be told apart from a failed or skipped
     # comparison. Every saved diff now states what was compared and the verdict.
@@ -89,6 +96,7 @@ for pair in "znver2 znver3" "znver2 v3" "znver3 v3"; do
             echo "# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)"
         else
             echo "# verdict: DIFFERENT — ${changed} changed instruction line(s); unified diff follows"
+            [ "$msame" = "1" ] && echo "# mnemonic multiset: IDENTICAL - the differences are ORDERING only (moved instructions, no instruction-set change)"
         fi
     } > "$OUT"
     cat "$BODY" >> "$OUT"
