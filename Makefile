@@ -40,6 +40,17 @@ TARGETS := znver2 znver3 v3
 SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c src/memcpy_word.c
 SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 
+# Kernel 3 must really be 128-bit SSE2: the ladder's point is that rung 3 is 16B-wide
+# rung 4 is 32B-wide. With -mavx2 in the target flags, clang's SLP vectorizer
+# merged two adjacent _mm_loadu_si128 intrinsics into ONE 32-byte vmovups, so the
+# "SSE2" rung compiled to ymm registers and was really rung 4. Caught by reading
+# the generated assembly before any timing was taken. Disabling AVX for this TU
+# forces the legacy 128-bit encodings (movdqu) and keeps the ladder monotonic;
+# the AVX2 rung that follows is built with AVX enabled, so rung3-vs-rung4 measures
+# exactly the width step it is supposed to.
+SSE2_SRCS  := src/memcpy_sse2.c
+SSE2_FLAGS := -mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize -fno-vectorize
+
 # Any new src/*.c kernel is picked up automatically (no Makefile edit per kernel).
 SRCS   := $(wildcard src/*.c) $(wildcard bench/*.c)
 SRC_OBJ := $(patsubst %.c,%.o,$(SRCS))
@@ -62,6 +73,7 @@ build/$(1)/%.o: %.c
 	@mkdir -p $$(dir $$@)
 	$$(CC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
 	  -DTARGET_NAME='"$(1)"' $$(if $$(filter $$<,$$(SCALAR_SRCS)),$$(SCALAR_FLAGS),) \
+	  $$(if $$(filter $$<,$$(SSE2_SRCS)),$$(SSE2_FLAGS),) \
 	  -MMD -MP -c $$< -o $$@
 
 bench/bench_$(1): $$(addprefix build/$(1)/,$$(SRC_OBJ))

@@ -1,0 +1,6 @@
+# codegen diff: kernel=sse2  znver2 vs znver3
+# compared: build/znver2/sse2.asm  vs  build/znver3/sse2.asm
+#           (function-extracted, address-stripped instruction streams from src/memcpy_sse2.c)
+# znver2: instructions=54  distinct_mnemonics=18  func_bytes=208
+# znver3: instructions=54  distinct_mnemonics=18  func_bytes=208
+# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)
