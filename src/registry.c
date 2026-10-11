@@ -34,8 +34,11 @@ const impl_t g_impls[] = {
     { "word", memcpy_word, NULL,
       "kernel 2: 8B chunks + byte tail, <32B byte fast path" },
 
+    { "sse2", memcpy_sse2, NULL,
+      "kernel 3: 16B x4 unrolled, _mm_loadu_si128/_mm_storeu_si128, scalar tail" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
-    { "sse2",    memcpy_sse2,    memset_sse2,    "16B x4 unrolled, _mm_loadu_si128" },
+    { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
     { "avx2",    memcpy_avx2,    memset_avx2,    "32B x4 unrolled, cached store" },
     { "avx2_nt", memcpy_avx2_nt, memset_avx2_nt, "32B x4, non-temporal, threshold-gated" },
     { "asm",     memcpy_asm,     memset_asm,     "hand-written clang-integrated asm (.S)" },
