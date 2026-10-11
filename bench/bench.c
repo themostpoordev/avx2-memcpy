@@ -137,7 +137,8 @@ typedef struct {
     const char *arg1, *arg2, *arg3, *arg4;
     unsigned reps;        /* >= 3 per the measurement rules */
     int dump_reps;        /* print every rep of every case to stderr */
-    int impl_warned;      /* --impl given more than once */
+    char   impl_buf[256]; /* accumulated --impl list; repeats append */
+    size_t impl_buf_len;
 } opts_t;
 
 static opts_t g_opt = {
@@ -146,8 +147,29 @@ static opts_t g_opt = {
     .verify = 1, .quick = 0, .thp = 0, .impl_filter = NULL,
     .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL, .arg4 = NULL,
     .reps = 5,        /* >= 3 required; 5 chosen to damp the noise measured in Phase 2 */
-    .dump_reps = 0, .impl_warned = 0,
+    .dump_reps = 0, .impl_buf = { 0 }, .impl_buf_len = 0,
 };
+
+/* Repeating --impl appends rather than overwriting.
+ *
+ * It used to keep only the last value, so `--impl naive --impl ref_scalar`
+ * silently measured ref_scalar alone and produced a misleading 12-row sweep
+ * that looked like "both impls, interleaved". Comma-separated lists still work,
+ * and mixing the two forms (`--impl a,b --impl c`) now means all three. */
+static void append_impl_list(const char *v)
+{
+    size_t vlen = strlen(v);
+    size_t need = vlen + (g_opt.impl_buf_len ? 1 : 0);   /* +1 for the comma */
+    if (g_opt.impl_buf_len + need + 1 > sizeof g_opt.impl_buf) {
+        fprintf(stderr, "harness: WARNING --impl list full; ignoring '%s'\n", v);
+        return;
+    }
+    if (g_opt.impl_buf_len) g_opt.impl_buf[g_opt.impl_buf_len++] = ',';
+    memcpy(g_opt.impl_buf + g_opt.impl_buf_len, v, vlen);
+    g_opt.impl_buf_len += vlen;
+    g_opt.impl_buf[g_opt.impl_buf_len] = '\0';
+    g_opt.impl_filter = g_opt.impl_buf;
+}
 
 /* ---- measurement floor ----------------------------------------------------
  * An empty kernel measured through the exact same volatile-pointer call path,
@@ -695,6 +717,7 @@ static int want_impl(const impl_t *im)
 
 static const impl_t *find_impl(const char *name)
 {
+    if (!name) return NULL;   /* a missing positional argument is a usage error, not a crash */
     for (size_t i = 0; i < g_impl_count; i++)
         if (strcmp(g_impls[i].name, name) == 0)
             return &g_impls[i];
@@ -966,6 +989,11 @@ static int mode_noise(void)
         return 2;
     }
     size_t n = (size_t)strtoull(g_opt.arg3, NULL, 0);
+    if (n == 0) { fprintf(stderr, "bad size\n"); return 2; }
+    if (n > g_max_size) {
+        fprintf(stderr, "size %zu exceeds max buffer %zu\n", n, g_max_size);
+        return 2;
+    }
     unsigned nruns = g_opt.arg4 ? (unsigned)atoi(g_opt.arg4) : 20;
     if (nruns < 2) nruns = 2;
     if (nruns > 64) nruns = 64;
@@ -1035,7 +1063,7 @@ static void usage(void)
         "  --verify                      correctness pass only\n"
         "  --list                        list implementations\n"
         "options: --quick --iters N --warmup N --budget SEC --reps N (>=3) --thp\n"
-        "         --no-verify --impl NAME\n");
+        "         --no-verify --impl NAME   (repeatable, or comma-separated list)\n");
 }
 
 int main(int argc, char **argv)
@@ -1052,10 +1080,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--reps") && i + 1 < argc)    g_opt.reps = (unsigned)atoi(argv[++i]);
         else if (!strcmp(a, "--warmup") && i + 1 < argc)  g_opt.warmup_max = (size_t)atoi(argv[++i]);
         else if (!strcmp(a, "--budget") && i + 1 < argc)  g_opt.budget_s = atof(argv[++i]);
-        else if (!strcmp(a, "--impl") && i + 1 < argc) {
-            if (g_opt.impl_filter) g_opt.impl_warned = 1;
-            g_opt.impl_filter = argv[++i];
-        }
+        else if (!strcmp(a, "--impl") && i + 1 < argc) append_impl_list(argv[++i]);
         else if (!strcmp(a, "--dump-reps")) g_opt.dump_reps = 1;
         else if (a[0] == '-' && a[1] == '-')              g_opt.mode = a;
         else if (npos < 4)                                pos[npos++] = a;
@@ -1063,13 +1088,20 @@ int main(int argc, char **argv)
     }
     g_opt.arg1 = pos[0]; g_opt.arg2 = pos[1]; g_opt.arg3 = pos[2];
     g_opt.arg4 = pos[3];
-    if (g_opt.impl_warned)
-        fprintf(stderr, "harness: WARNING --impl given more than once; only "
-                        "'%s' is used (use a comma-separated list for several)\n",
-                g_opt.impl_filter);
     /* `bench <impl> <op> <size>` is shorthand for --one (used by run_perf.sh). */
     if (!strcmp(g_opt.mode, "all") && npos == 3)
         g_opt.mode = "--one";
+    /* Modes that take positional arguments must reject a missing one instead of
+     * dereferencing NULL: `bench --noise` and `bench --one` used to segfault. */
+    if (!strcmp(g_opt.mode, "--one") || !strcmp(g_opt.mode, "--pmu") ||
+        !strcmp(g_opt.mode, "--noise")) {
+        if (!pos[0] || !pos[1] || !pos[2]) {
+            fprintf(stderr, "harness: %s needs <impl> <op> <size> [$n]\n",
+                    g_opt.mode);
+            usage();
+            return 2;
+        }
+    }
     if (g_opt.iters_min > g_opt.iters_max) g_opt.iters_min = g_opt.iters_max;
 
     if (!strcmp(g_opt.mode, "--help")) { usage(); return 0; }

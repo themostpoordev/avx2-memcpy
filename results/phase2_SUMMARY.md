@@ -162,14 +162,106 @@ the sign is consistent within each size across all three statistics — an
 alignment effect, not noise: identical source can differ ~10% purely from where
 its loop lands.
 
-### Recommendation (your decision rule put this in the >5% branch on medians)
+### Live re-measurement (post-fix, same session, `bench_znver2`)
 
-1. **Primary statistic: global min of `min_ns` and its PMU `cycles_per_byte`**,
-   over ≥11 reps, for sizes ≥512 B. Floor ≈ 5%; require deltas to exceed it.
-2. **Sizes <512 B: no cross-kernel claims** except for differences >2x.
-3. **Report `cycles/byte`, not GB/s, as the primary unit** — the clock drifts 14%.
-4. Medians and p99 are informational only; the harness keeps flagging >5% spreads.
-5. All comparisons stay interleaved/paired inside one process (already implemented).
+Re-run after the three harness fixes below, so every number here comes from the
+current binary. Where it disagrees with the tables above, this supersedes them.
+
+**Step 1 — prescribed command `--quick --impl naive --impl ref_scalar --reps 5`,
+n=64, both impls in one process, interleaved.**
+
+| rep | naive `med_ns` | naive `min_ns` | ref_scalar `med_ns` | ref_scalar `min_ns` |
+|--:|--:|--:|--:|--:|
+| 0 | 30.19 | 24.41 | 40.67 | 27.87 |
+| 1 | 42.05 | 32.20 | 33.63 | 29.37 |
+| 2 | 40.13 | 30.58 | 31.42 | 22.23 |
+| 3 | 30.03 | 25.71 | 36.22 | 29.73 |
+| 4 | 33.37 | 25.72 | 35.62 | 29.02 |
+
+Medians 30.0–42.1 ns inside naive alone (40% within one process); the two
+identical kernels sit 6.3% apart on median-of-medians and 9.8% apart on global
+min. So the spread is **inside** a process: host contention or core state, not
+cross-process drift.
+
+**Step 2 — noise floor, 20 back-to-back runs, same code path.**
+
+| size | median-of-medians spread | median-of-mins spread | null-kernel overhead |
+|--:|--:|--:|--:|
+| 64 B | 41.2% | 40.1% | 1.86 ns = 4.89% of impl |
+| 4 KB | 36.3% | 24.1% | 1.25 ns = 0.054% |
+| 64 KB | 40.4% | 11.4% | **0.000 ns** (below 40 ns timer floor) |
+| 1 MB | 35.7% | 15.9% | **0.000 ns** (below timer floor) |
+
+**Step 3 — contention, three runs 60 s apart (4 KB, 20 runs each).**
+
+| run | wall clock | loadavg | `steal` cpu2 / agg | core_ghz | med-of-medians | spread | min-of-mins |
+|--:|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 20:45:28 | 1.70 | 0 / 0 | 2.847 | 2235.5 ns | 43.4% | 1291.8 ns |
+| 2 | 20:46:31 | 1.49 | 0 / 0 | 2.730 | 1986.9 ns | 39.0% | 1291.8 ns |
+| 3 | 20:47:34 | 1.52 | 0 / 0 | 3.063 | 2503.5 ns | **3.7%** | 1745.8 ns |
+
+`steal` is exactly 0 in every sample on both cpu2 and aggregate, and PSI `some`
+stays 1–2% with `full` 0.00, yet loadavg sits at 1.5–1.7 on 4 vCPUs with
+`1/291` runnable while nothing of ours is running. The guest's accounting simply
+does not expose the interference. Run 3 is the diagnostic find: **a window that
+is internally steady (3.7%) is 26% slower than a window that is internally
+chaotic (43%)** — so "quiet" and "fast" are not the same window, and neither
+medians nor mins are stable across windows.
+
+**Step 4 — harness overhead.** Call + batch loop + address setup = **1.86 ns** per
+call at 64 B (4.89% of the measurement, a constant offset, not noise); 1.25 ns at
+4 KB (0.054%); unresolvable at ≥64 KB. The timer costs 40 ns per sample,
+amortised to 0.039 ns/call at batch=1024 and 40 ns/call at batch=1 (0.15% at
+64 KB, 0.008% at 1 MB). So harness overhead is **not** the source of the spread:
+the null kernel, which touches no memory, still varies 20% run-to-run.
+
+**Null-comparison band, current binary, reps=9.** Ratios of two provably
+identical kernels; anything smaller than these is an artefact.
+
+| size | global-min ratio | best-median ratio | best cycles/byte ratio |
+|--:|--:|--:|--:|
+| 16 B | +19.1% | +19.0% | +20.6% |
+| 32 B | +5.0% | −4.4% | −0.0% |
+| 64 B | +8.5% | −7.8% | −5.0% |
+| 128 B | +18.4% | −16.7% | −6.3% |
+| 256 B | +22.0% | +24.0% | +12.6% |
+| 512 B | +0.6% | +34.4% | +12.1% |
+| 1 KB | +0.3% | +28.6% | +20.9% |
+| 4 KB | −20.1% | +0.2% | +0.5% |
+| 16 KB | −0.9% | −0.1% | −1.4% |
+| 64 KB | +1.1% | +0.1% | +3.4% |
+| 256 KB | −0.0% | +7.5% | +2.4% |
+| 1 MB | +0.1% | +3.2% | +1.9% |
+| 4 MB | −0.4% | +7.1% | +0.3% |
+
+Note 4 KB: the global-min ratio reads −20.1% while median and cycles/byte read
++0.2%/+0.5% — a single run's global min can itself be fooled, so a min only
+counts once it has been reproduced across repeated quiet windows.
+
+### Recommendation
+
+1. **Primary statistic: `cycles/byte` (PMU cycles, not TSC)** — it is the only
+   metric that survives the 2.73–3.06 GHz core-clock drift measured here, and it
+   is the tightest of the three at large sizes.
+2. **≥16 KB: claims allowed above a 3.5% floor**, taken from the best of ≥2
+   repeated quiet windows (a window is quiet when its own median spread <5%).
+3. **4 KB–16 KB: floor ≈ 5%, treat 4 KB as 20%** (one statistic blew up 20% there).
+4. **<4 KB: no cross-kernel claims below 2x** — the band is 5–34%.
+5. Medians and p99 are informational only; the harness keeps flagging >5% spreads,
+   and we now also flag a run whose spread is <5% as a *usable* window.
+6. All comparisons stay interleaved/paired inside one process (implemented).
+
+### Harness defects found and fixed during this investigation
+
+1. `bench/bench.c` interleaved-rep indexing (`rr[r*ncases+c]` vs `rr[c*reps+r]`)
+   — cases read each other's samples (commit `a6f32ea`).
+2. Repeating `--impl` silently kept only the last value, so the prescribed step-1
+   command measured one kernel and looked like two. Repeats now append; comma
+   lists still work (commit `a6f32ea`).
+3. `--noise` and `--one` with a missing positional argument dereferenced NULL and
+   segfaulted (rc=139) instead of printing usage. Now rc=2 + usage (commit `a6f32ea`).
+4. `scripts/run_perf.sh` printed the shell's affinity mask as if it were the
+   measurement's (Phase 1).
 
 * `p99_ns` is recorded for information only and is used to claim nothing.
 
