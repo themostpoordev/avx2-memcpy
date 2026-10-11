@@ -39,5 +39,6 @@ void *memset_ref(void *dst, int c, size_t n) NOINLINE;
 
 /* --- Phase 2 kernel ladder (one file per kernel in src/) ------------------ */
 void *memcpy_naive(void *dst, const void *src, size_t n);   /* kernel 1 */
+void *memcpy_word(void *dst, const void *src, size_t n);    /* kernel 2 */
 
 #endif /* AVX2_MEM_COMMON_H */

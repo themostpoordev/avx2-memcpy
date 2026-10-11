@@ -31,8 +31,10 @@ const impl_t g_impls[] = {
     { "naive", memcpy_naive, NULL,
       "kernel 1: byte-by-byte loop, 1B load + 1B store per byte" },
 
+    { "word", memcpy_word, NULL,
+      "kernel 2: 8B chunks + byte tail, <32B byte fast path" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
-    { "word",    memcpy_word,    memset_word,    "8B chunks + tail" },
     { "sse2",    memcpy_sse2,    memset_sse2,    "16B x4 unrolled, _mm_loadu_si128" },
     { "avx2",    memcpy_avx2,    memset_avx2,    "32B x4 unrolled, cached store" },
     { "avx2_nt", memcpy_avx2_nt, memset_avx2_nt, "32B x4, non-temporal, threshold-gated" },

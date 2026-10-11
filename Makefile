@@ -37,7 +37,7 @@ TARGETS := znver2 znver3 v3
 # Kernels whose loops MUST stay scalar. clang -O3 -march=znver2 turns a byte
 # loop into a 4x32B vmovups loop otherwise, which would make a "naive" baseline
 # silently be an AVX2 kernel and make every comparison meaningless.
-SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c
+SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c src/memcpy_word.c
 SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 
 # Any new src/*.c kernel is picked up automatically (no Makefile edit per kernel).
