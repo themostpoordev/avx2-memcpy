@@ -1,0 +1,109 @@
+# Measurement protocol — the contract for every Phase 2 (and later) claim
+
+Status: **in force** from Kernel 2 onward. This document is the contract. Any
+deviation from it must be flagged in the report that deviates, and if the
+deviation changes a conclusion, the conclusion is void until remeasured.
+
+Host: shared 4-vCPU guest, Zen-2-class silicon, 2.79474 GHz invariant TSC.
+No cpufreq sysfs, so the core clock is uncontrollable (2.73–3.06 GHz observed).
+
+---
+
+## 1. Why medians are not usable here (the evidence)
+
+* **Host contention is real and invisible to the guest.** With the destination
+  buffer untouched by anything else, `/proc/loadavg` sits at 1.4–1.75 on 4 vCPUs
+  while nothing of ours runs, and the `/proc/stat` delta *during* a ~3 s
+  measurement window was **480–485 busy ticks aggregate (~1.6 vCPUs of foreign
+  work) with `steal` exactly 0** and PSI `full` 0.00. The guest's accounting
+  simply does not expose the interference.
+* **Pinning cannot fix it.** `taskset -c 2` vs unpinned, 4 KB, 20 runs/window,
+  three windows: median spreads 31.9/18.2/31.3 % vs 35.7/31.3/20.9 %; min
+  spreads 35.0/35.3/37.4 % vs 28.4/18.5/41.7 %. The distributions are the same,
+  so migration is ruled out and the interference is host-imposed.
+* **The noise is window-structured.** One window can be internally steady
+  (median spread 3.7 %) while another is 43 % chaotic — and the steady window can
+  be the *slower* one. So neither "quiet" nor "fast" can be assumed.
+* **Two byte-identical kernels differ by up to 34 %** on best-median GB/s at
+  small sizes and 4–11 % at large ones when measured in separate windows. That
+  number is the artefact band, not a result.
+
+## 2. Why `min_of_mins` is the signal
+
+`min_of_mins` = the single smallest `min_ns` observed across **all reps in all
+windows** for a given `(impl, target, op, size)`. Each rep's `min_ns` is the
+fastest single batch inside that rep's timed region, on a pinned core, with the
+timer overhead subtracted.
+
+Across 9 windows at 4 KB, `min_of_mins` came out at **1291.81–1293.06 ns — 0.1 %
+apart** in 6 of them, while the medians over those same windows moved 20–43 %.
+The minimum is a stable, reproducible property of this box. The medians are
+contaminated. We therefore measure the floor and compare floors.
+
+## 3. The rules
+
+1. **Primary metric: `cycles/byte` from the rep that achieved `min_of_mins`.**
+   Cycles come from the PMU (`PERF_COUNT_HW_CPU_CYCLES`), never from rdtsc/TSC.
+   The paired `min_ns` and its `cycles/byte` come from the same timed region, so
+   they describe the same execution.
+2. **Repetition: 5 reps per window, minimum 3 windows** per
+   `(impl, target, op, size)`. Keep adding windows until `min_of_mins` is stable
+   to **≤0.5 %** across the last two windows. **Cap: 9 windows.**
+3. **Claim floor: Δ`min_of_mins` must exceed 1.5 %** on the same
+   `(target, op, size)` measured the same way. Anything ≤1.5 % is reported as
+   **within-noise** and is not a win, a loss, or a tie-breaker.
+   The floor is 1.5 % rather than the ~3.5 % that the ns-median noise would
+   justify, because `min_of_mins` is stable to 0.1 % and the floor must still
+   cover the 0.5 % window-stability tolerance plus cross-window drift.
+4. **Reps are interleaved across impls inside one process** (harness feature), so
+   an interference burst is shared between the compared kernels instead of being
+   charged to whichever one ran during it.
+5. **All measurements pinned: `taskset -c 2`**, and every rep must evidence
+   `cpu=2 migrated=0` (the harness samples `sched_getcpu()` *inside* the timed
+   region). Migration makes a rep unusable and it is dropped and reported.
+6. **Median and p99 are informational columns only.** They are recorded, they are
+   never used in a claim, and the harness keeps flagging >5 % median spreads.
+7. **`gbps` is reported for information**; it is inflatable by an idle clock and
+   is not comparable across sessions. ns and cycles/byte are.
+8. **`cycles/byte` is derived from raw PMU cycles and total bytes**
+   (`n × batch × iters`); the raw `cycles_total` column is always published so
+   the division can be checked.
+9. Every result records its own `core_ghz` snapshot; a fixed clock is never
+   assumed.
+10. A claim of a speedup we did not measure with PMU cycles is forbidden.
+
+## 4. What this protocol rules out
+
+* Comparing NS-across sessions: the core clock moved 2.73→3.06 GHz between
+  windows, a 12 % swing, so any cross-session ns comparison is
+  frequency-confounded. `cycles/byte` is not.
+* Comparing windows: only `min_of_mins` over ≥3 windows may be compared.
+* Any claim from a single run, however tempting the number.
+
+## 5. Known limits of this box (documented, not hidden)
+
+* L3/LLC PMU events are unavailable on this vPMU, and a group wider than 4 events
+  never schedules. Cache-boundary statements are labelled inference, not
+  measurement.
+* `retired_ops` (raw 0x0076) reads 1.49–1.62/byte against `instructions` 5.0/byte
+  on this masked CPU; it is used for no claim.
+* No `perf` CLI, `hyperfine`, `gnuplot` or `nasm`; no installs permitted.
+  Substitutes: our own `perf_event_open` wrapper, the harness timers, clang's
+  integrated assembler, and (planned) a pure-C SVG writer.
+* The instrument itself has a floor: harness call+loop+setup costs 1.86 ns per
+  call at 64 B (4.89 % of that measurement) and is unresolvable at ≥64 KB. A
+  claimed effect at small sizes must exceed this offset, and the offset is
+  constant rather than noise.
+
+## 6. Reproducing any number in a Phase 2 report
+
+```sh
+make                                              # 3 targets, 0 warnings
+scripts/mo_measure.sh <target> <impls> memcpy <sizes> <log>   # ≤9 windows, pinned
+scripts/mo_analyze.sh <log> <kernel> <prev> [op]              # report + CSV
+```
+
+`mo_measure.sh` enforces the window count and the ≤0.5 % stability stop;
+`mo_analyze.sh` applies the 1.5 % claim floor and writes
+`results/phase2_<kernel>_<target>.csv`. Neither script post-processes a number by
+hand.
