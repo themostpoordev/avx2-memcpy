@@ -134,17 +134,40 @@ typedef struct {
     int    thp;
     const char *impl_filter;
     const char *mode;
-    const char *arg1, *arg2, *arg3;
+    const char *arg1, *arg2, *arg3, *arg4;
     unsigned reps;        /* >= 3 per the measurement rules */
+    int dump_reps;        /* print every rep of every case to stderr */
+    int impl_warned;      /* --impl given more than once */
 } opts_t;
 
 static opts_t g_opt = {
     .warmup_max = 10, .iters_max = 100, .iters_min = 3,
     .budget_s = 1.0, .warm_budget_s = 0.5,
     .verify = 1, .quick = 0, .thp = 0, .impl_filter = NULL,
-    .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL,
-    .reps = 3,
+    .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL, .arg4 = NULL,
+    .reps = 5,        /* >= 3 required; 5 chosen to damp the noise measured in Phase 2 */
+    .dump_reps = 0, .impl_warned = 0,
 };
+
+/* ---- measurement floor ----------------------------------------------------
+ * An empty kernel measured through the exact same volatile-pointer call path,
+ * batch loop and timer as the real kernels. Its per-call time is pure harness
+ * overhead (call + loop + address setup), which is what has to be subtracted
+ * from the story before calling any small-size result "memory performance".
+ */
+static void *null_copy(void *dst, const void *src, size_t n)
+{
+    (void)dst; (void)src; (void)n;
+    BARRIER();
+    return dst;
+}
+
+static void *null_set(void *dst, int c, size_t n)
+{
+    (void)dst; (void)c; (void)n;
+    BARRIER();
+    return dst;
+}
 
 /* ------------------------------------------------------------------ timing */
 static double g_timer_overhead_ns = 0.0;
@@ -562,6 +585,13 @@ typedef struct {
     int cpu, migrated, flagged;
 } agg_t;
 
+/* One (impl, op, size) measurement case, for the interleaved rep scheduler. */
+typedef struct {
+    const impl_t *im;
+    int           op;
+    size_t        n;
+} case_t;
+
 /* ------------------------------------------------------------------ output */
 static void csv_header(void)
 {
@@ -592,12 +622,15 @@ static int cmp_u64v(const void *a, const void *b)
     return (x > y) - (x < y);
 }
 
-static void measure_reps(const impl_t *im, int op, size_t n, agg_t *o)
+/* Aggregate the res_t of the `reps` repetitions of one (impl, op, size) case.
+ * The reps are produced by the caller so that they can be INTERLEAVED across
+ * cases: measuring impl A's 3 reps back-to-back and then impl B's makes any
+ * interference burst look like a result for whichever impl was running. */
+static void aggregate(const res_t *rs, unsigned reps, size_t n, agg_t *o)
 {
     double meds[MAX_REPS], gbps[MAX_REPS], cpbs[MAX_REPS], tscs[MAX_REPS];
     double p99s[MAX_REPS], walls[MAX_REPS];
     uint64_t cycs[MAX_REPS];
-    unsigned reps = g_opt.reps ? g_opt.reps : 1;
     unsigned iters = 0, batch = 0;
     double mins = 0.0;
     int cpu = -1, migrated = 0;
@@ -606,21 +639,20 @@ static void measure_reps(const impl_t *im, int op, size_t n, agg_t *o)
     if (reps > MAX_REPS) reps = MAX_REPS;
 
     for (unsigned r = 0; r < reps; r++) {
-        res_t res;
-        run_case(im, op, g_dst, g_src, n, &res);
-        if (res.batch == 0) { o->batch = 0; return; }   /* impl lacks this op */
-        meds[r] = res.med_ns;
-        gbps[r] = res.gbps;
-        cpbs[r] = res.cpb;
-        tscs[r] = res.tsc_cpb;
-        p99s[r] = res.p99_ns;
-        walls[r] = res.gbps_wall;
-        cycs[r] = res.cycles;
-        if (r == 0 || res.min_ns < mins) mins = res.min_ns;
-        if (res.iters > iters) iters = res.iters;
-        batch = res.batch;
-        cpu = res.cpu_b;
-        if (res.migrated) migrated = 1;
+        const res_t *res = &rs[r];
+        if (res->batch == 0) { o->batch = 0; return; }   /* impl lacks this op */
+        meds[r] = res->med_ns;
+        gbps[r] = res->gbps;
+        cpbs[r] = res->cpb;
+        tscs[r] = res->tsc_cpb;
+        p99s[r] = res->p99_ns;
+        walls[r] = res->gbps_wall;
+        cycs[r] = res->cycles;
+        if (r == 0 || res->min_ns < mins) mins = res->min_ns;
+        if (res->iters > iters) iters = res->iters;
+        batch = res->batch;
+        cpu = res->cpu_b;
+        if (res->migrated) migrated = 1;
     }
 
     o->reps = reps;
@@ -643,9 +675,22 @@ static void measure_reps(const impl_t *im, int op, size_t n, agg_t *o)
     o->flagged = (o->spread_pct > 5.0);
 }
 
+/* --impl accepts a comma-separated list ("naive,glibc"). Repeating the flag is
+ * a mistake that used to silently keep only the last value, which produced a
+ * confusing 12-row sweep during the Phase 2 noise investigation. */
 static int want_impl(const impl_t *im)
 {
-    return !g_opt.impl_filter || strcmp(g_opt.impl_filter, im->name) == 0;
+    if (!g_opt.impl_filter) return 1;
+    const char *p = g_opt.impl_filter;
+    size_t len = strlen(im->name);
+    while (*p) {
+        const char *comma = strchr(p, ',');
+        size_t seg = comma ? (size_t)(comma - p) : strlen(p);
+        if (seg == len && strncmp(p, im->name, len) == 0) return 1;
+        if (!comma) break;
+        p = comma + 1;
+    }
+    return 0;
 }
 
 static const impl_t *find_impl(const char *name)
@@ -678,44 +723,86 @@ static int mode_all(void)
             g_tsc_ghz > 0 ? g_core_ghz / g_tsc_ghz : 0.0,
             g_timer_overhead_ns, g_max_size >> 20);
 
-    csv_header();
-    unsigned nflagged = 0, nmigrated = 0, nrows = 0;
+    /* Correctness first: every impl is verified before anything is measured,
+     * and a single failure aborts the whole run (no benchmarking of broken
+     * code). */
     for (size_t ii = 0; ii < g_impl_count; ii++) {
         const impl_t *im = &g_impls[ii];
-        if (!want_impl(im))
-            continue;
-        if (g_opt.verify && verify_impl(im))
-            return 1;                       /* no benchmarking of broken code */
+        if (!want_impl(im)) continue;
+        if (g_opt.verify && verify_impl(im)) return 1;
+    }
+
+    /* Build the case list. */
+    size_t ncases = 0;
+    case_t *cases = malloc(sizeof *cases * g_impl_count * 2 * nsizes);
+    if (!cases) { fprintf(stderr, "harness: OOM\n"); return 1; }
+    for (size_t ii = 0; ii < g_impl_count; ii++) {
+        const impl_t *im = &g_impls[ii];
+        if (!want_impl(im)) continue;
         for (int op = 0; op < 2; op++) {
             if (op == 0 && !im->copy) continue;
             if (op == 1 && !im->set)  continue;
             for (size_t si = 0; si < nsizes; si++) {
-                size_t n = sizes[si];
-                if (n > g_max_size) continue;
-                agg_t a;
-                measure_reps(im, op, n, &a);
-                if (a.batch == 0) continue;
-                csv_row(im, op_name(op), n, &a);
-                nrows++;
-                if (a.flagged) {
-                    nflagged++;
-                    fprintf(stderr, "VARIANCE FLAG %s %s n=%zu reps=%u "
-                                    "spread=%.2f%% on median gbps=%.4f "
-                                    "(>5%% -> remeasure or treat as noisy)\n",
-                            im->name, op_name(op), n, a.reps, a.spread_pct,
-                            a.gbps);
-                }
-                if (a.migrated) {
-                    nmigrated++;
-                    fprintf(stderr, "MIGRATION %s %s n=%zu cpu %d -> %d\n",
-                            im->name, op_name(op), n, a.cpu, a.cpu);
-                }
-                fflush(stdout);
+                if (sizes[si] > g_max_size) continue;
+                cases[ncases].im = im;
+                cases[ncases].op = op;
+                cases[ncases].n = sizes[si];
+                ncases++;
             }
         }
     }
+
+    unsigned reps = g_opt.reps ? g_opt.reps : 1;
+    if (reps > MAX_REPS) reps = MAX_REPS;
+    res_t *rr = calloc(ncases * reps, sizeof *rr);
+    if (!rr) { free(cases); fprintf(stderr, "harness: OOM\n"); return 1; }
+
+    /* Interleaved repetition: rep 0 of every case, then rep 1 of every case,
+     * ... so a burst of interference is spread across all impls instead of
+     * being charged to whichever one happened to run during it. */
+    fprintf(stderr, "harness: interleaved reps=%u across %zu cases"
+                    " (%zu measurements)\n", reps, ncases, ncases * (size_t)reps);
+    for (unsigned r = 0; r < reps; r++)
+        for (size_t c = 0; c < ncases; c++)
+            run_case(cases[c].im, cases[c].op, g_dst, g_src, cases[c].n,
+                     &rr[c * reps + r]);   /* one case's reps must be contiguous */
+
+    if (g_opt.dump_reps) {
+        for (size_t c = 0; c < ncases; c++)
+            for (unsigned r = 0; r < reps; r++) {
+                const res_t *x = &rr[c * reps + r];
+                if (x->batch == 0) continue;
+                fprintf(stderr, "REPS %s %s n=%zu rep=%u med_ns=%.4f min_ns=%.4f "
+                                "p99_ns=%.4f cycles=%llu cpb=%.4f batch=%u iters=%u\n",
+                        cases[c].im->name, op_name(cases[c].op), cases[c].n,
+                        r, x->med_ns, x->min_ns, x->p99_ns,
+                        (unsigned long long)x->cycles, x->cpb, x->batch,
+                        x->iters);
+            }
+    }
+
+    csv_header();
+    unsigned nflagged = 0, nmigrated = 0, nrows = 0;
+    for (size_t c = 0; c < ncases; c++) {
+        agg_t a;
+        aggregate(&rr[c * reps], reps, cases[c].n, &a);
+        if (a.batch == 0) continue;
+        csv_row(cases[c].im, op_name(cases[c].op), cases[c].n, &a);
+        nrows++;
+        if (a.flagged) {
+            nflagged++;
+            fprintf(stderr, "VARIANCE FLAG %s %s n=%zu reps=%u spread=%.2f%% "
+                            "on median gbps=%.4f (>5%% -> remeasure or treat"
+                            " as noisy)\n",
+                    cases[c].im->name, op_name(cases[c].op), cases[c].n,
+                    a.reps, a.spread_pct, a.gbps);
+        }
+        if (a.migrated) nmigrated++;
+    }
     fprintf(stderr, "harness: %u rows, %u variance-flagged, %u migrated\n",
             nrows, nflagged, nmigrated);
+    free(rr);
+    free(cases);
     return 0;
 }
 
@@ -733,13 +820,12 @@ static int mode_one(int full_pmu)
     }
 
     if (!full_pmu) {
-        /* --one is the single-shot form used by scripts/run_perf.sh; keep it to
-         * one rep so the caller's runtime stays predictable. */
-        unsigned saved = g_opt.reps;
-        g_opt.reps = 1;
+        /* --one is the single-shot form used by scripts/run_perf.sh; one rep
+         * keeps the caller's runtime predictable. */
+        res_t res;
         agg_t a;
-        measure_reps(im, op, n, &a);
-        g_opt.reps = saved;
+        run_case(im, op, g_dst, g_src, n, &res);
+        aggregate(&res, 1, n, &a);
         csv_header();
         csv_row(im, op_name(op), n, &a);
         return 0;
@@ -861,6 +947,68 @@ static int mode_align(int twod, size_t n, int step)
     return 0;
 }
 
+/* --noise <impl> <op> <size> [n]: the noise floor of this box.
+ *
+ * Runs the SAME impl at the SAME size n times back-to-back in one process and
+ * reports min/median/max of the n per-run medians, then does the same with the
+ * null kernel so the harness's own call+loop cost is separated from memory
+ * time. This is the measurement that decides whether any of the kernel
+ * comparisons in this project mean anything.
+ */
+static int mode_noise(void)
+{
+    const impl_t *im = find_impl(g_opt.arg1);
+    if (!im) { fprintf(stderr, "no such impl: %s\n", g_opt.arg1); return 2; }
+    int op = parse_op(g_opt.arg2);
+    if (op < 0) { fprintf(stderr, "op must be memcpy|memset\n"); return 2; }
+    if ((op == 0 && !im->copy) || (op == 1 && !im->set)) {
+        fprintf(stderr, "impl %s has no %s side\n", im->name, op_name(op));
+        return 2;
+    }
+    size_t n = (size_t)strtoull(g_opt.arg3, NULL, 0);
+    unsigned nruns = g_opt.arg4 ? (unsigned)atoi(g_opt.arg4) : 20;
+    if (nruns < 2) nruns = 2;
+    if (nruns > 64) nruns = 64;
+
+    static impl_t nullimpl = { "null", null_copy, null_set, "empty call path" };
+    double med[64], mn[64], nul[64], cpbs[64];
+    uint64_t cyc[64];
+
+    if (g_opt.verify && verify_impl(im)) return 1;
+
+    for (unsigned i = 0; i < nruns; i++) {
+        res_t r;
+        run_case(im, op, g_dst, g_src, n, &r);
+        med[i] = r.med_ns; mn[i] = r.min_ns; cyc[i] = r.cycles; cpbs[i] = r.cpb;
+        run_case(&nullimpl, op, g_dst, g_src, n, &r);
+        nul[i] = r.med_ns;
+    }
+
+    printf("noise floor: impl=%s op=%s size=%zu runs=%u batch=%u\n",
+           im->name, op_name(op), n, nruns, pick_batch(n));
+    printf("run,med_ns,min_ns,cycles,cpb,null_med_ns\n");
+    for (unsigned i = 0; i < nruns; i++)
+        printf("%u,%.4f,%.4f,%llu,%.4f,%.4f\n", i, med[i], mn[i],
+               (unsigned long long)cyc[i], cpbs[i], nul[i]);
+
+    double ms[64], ns_[64], nu[64];
+    for (unsigned i = 0; i < nruns; i++) { ms[i] = med[i]; ns_[i] = mn[i]; nu[i] = nul[i]; }
+    double mmed = med_d(ms, nruns), mmin = med_d(ns_, nruns), mnul = med_d(nu, nruns);
+    double lo = ms[0], hi = ms[nruns - 1];      /* med_d sorted ms[] */
+    double minlo = ns_[0], minhi = ns_[nruns - 1];
+    printf("median_of_medians_ns=%.4f min_of_medians_ns=%.4f max_of_medians_ns=%.4f "
+           "spread_pct=%.3f\n", mmed, lo, hi, mmed > 0 ? 100 * (hi - lo) / mmed : 0);
+    printf("median_of_mins_ns=%.4f min_of_mins_ns=%.4f max_of_mins_ns=%.4f "
+           "spread_pct=%.3f\n", mmin, minlo, minhi,
+           mmin > 0 ? 100 * (minhi - minlo) / mmin : 0);
+    printf("null_kernel_median_ns=%.4f harness_overhead_pct_of_impl=%.3f\n",
+           mnul, mmed > 0 ? 100 * mnul / mmed : 0);
+    printf("timer_overhead_ns_per_sample=%.3f amortised_per_call=%.5f\n",
+           g_timer_overhead_ns,
+           pick_batch(n) ? g_timer_overhead_ns / pick_batch(n) : 0);
+    return 0;
+}
+
 static void report_pinning(void)
 {
     cpu_set_t set;
@@ -880,7 +1028,10 @@ static void usage(void)
         "  --pmu <impl> <op> <size>      full PMU counter set + derived ratios\n"
         "  --align [size]                src and dst offset sweeps 0..63\n"
         "  --align2d [size] [step]       src x dst offset grid\n"
+        "  --noise <impl> <op> <size> [n]  noise floor: n back-to-back runs +\n"
+        "                                 null-kernel harness overhead\n"
         "  --calib                       clock-domain calibration only\n"
+        "  --dump-reps                   print every rep of every case to stderr\n"
         "  --verify                      correctness pass only\n"
         "  --list                        list implementations\n"
         "options: --quick --iters N --warmup N --budget SEC --reps N (>=3) --thp\n"
@@ -889,7 +1040,7 @@ static void usage(void)
 
 int main(int argc, char **argv)
 {
-    const char *pos[3] = { NULL, NULL, NULL };
+    const char *pos[4] = { NULL, NULL, NULL, NULL };
     int npos = 0;
 
     for (int i = 1; i < argc; i++) {
@@ -901,12 +1052,21 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--reps") && i + 1 < argc)    g_opt.reps = (unsigned)atoi(argv[++i]);
         else if (!strcmp(a, "--warmup") && i + 1 < argc)  g_opt.warmup_max = (size_t)atoi(argv[++i]);
         else if (!strcmp(a, "--budget") && i + 1 < argc)  g_opt.budget_s = atof(argv[++i]);
-        else if (!strcmp(a, "--impl") && i + 1 < argc)    g_opt.impl_filter = argv[++i];
+        else if (!strcmp(a, "--impl") && i + 1 < argc) {
+            if (g_opt.impl_filter) g_opt.impl_warned = 1;
+            g_opt.impl_filter = argv[++i];
+        }
+        else if (!strcmp(a, "--dump-reps")) g_opt.dump_reps = 1;
         else if (a[0] == '-' && a[1] == '-')              g_opt.mode = a;
-        else if (npos < 3)                                pos[npos++] = a;
+        else if (npos < 4)                                pos[npos++] = a;
         else { usage(); return 2; }
     }
     g_opt.arg1 = pos[0]; g_opt.arg2 = pos[1]; g_opt.arg3 = pos[2];
+    g_opt.arg4 = pos[3];
+    if (g_opt.impl_warned)
+        fprintf(stderr, "harness: WARNING --impl given more than once; only "
+                        "'%s' is used (use a comma-separated list for several)\n",
+                g_opt.impl_filter);
     /* `bench <impl> <op> <size>` is shorthand for --one (used by run_perf.sh). */
     if (!strcmp(g_opt.mode, "all") && npos == 3)
         g_opt.mode = "--one";
@@ -963,6 +1123,7 @@ int main(int argc, char **argv)
         if (step < 1 || step > 64) step = 8;
         rc = mode_align(1, n, step);
     }
+    else if (!strcmp(g_opt.mode, "--noise"))  rc = mode_noise();
     else if (!strcmp(g_opt.mode, "--calib")) {
         printf("tsc_ghz=%.5f core_ghz=%.5f core_to_tsc_ratio=%.4f "
                "timer_overhead_ns=%.3f\n",
