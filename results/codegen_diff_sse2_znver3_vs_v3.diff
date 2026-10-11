@@ -4,8 +4,8 @@
 # znver3: instructions=54  distinct_mnemonics=18  func_bytes=208
 # v3: instructions=54  distinct_mnemonics=18  func_bytes=208
 # verdict: DIFFERENT — 4 changed instruction line(s); unified diff follows
---- build/znver3/sse2.asm	2026-10-11 21:34:13.035674403 +0200
-+++ build/v3/sse2.asm	2026-10-11 21:34:13.095673180 +0200
+--- build/znver3/sse2.asm	2026-10-11 21:38:36.913616787 +0200
++++ build/v3/sse2.asm	2026-10-11 21:38:36.970282293 +0200
 @@ -21,11 +21,11 @@
  movups 0x10(%rsi,%rdi,1),%xmm1
  movups 0x20(%rsi,%rdi,1),%xmm2

@@ -103,6 +103,19 @@ for pair in "znver2 znver3" "znver2 v3" "znver3 v3"; do
     if diff -u "build/$A/$KERNEL.mnem" "build/$B/$KERNEL.mnem" > "$mout" 2>&1; then
         echo "    (mnemonic streams identical: differences are register/allocation only)"
     else
-        echo "    mnemonic streams DIFFER: $(grep -c '^[+-][^+-]' "$mout" || true) lines (real instruction-set differences)"
+        # A mnemonic that shows up as BOTH - and + is a MOVED instruction, not a
+        # changed one. Comparing sorted multisets separates "same instructions,
+        # different order" from a genuine instruction-set difference. The first
+        # version reported both as "real instruction-set differences", which
+        # overstated the znver2-vs-v3 gap for the SSE2 rung: that difference is
+        # ordering only (two lea instructions in a different position).
+        sort "build/$A/$KERNEL.mnem" > "$mout.sa"
+        sort "build/$B/$KERNEL.mnem" > "$mout.sb"
+        if cmp -s "$mout.sa" "$mout.sb"; then
+            echo "    mnemonic MULTISET identical: differences are ORDERING only ($(grep -c '^[+-][^+-]' "$mout" || true) moved lines, no instruction-set change)"
+        else
+            echo "    mnemonic streams DIFFER: $(grep -c '^[+-][^+-]' "$mout" || true) lines (real instruction-set differences)"
+        fi
+        rm -f "$mout.sa" "$mout.sb"
     fi
 done

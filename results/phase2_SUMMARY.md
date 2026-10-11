@@ -8,6 +8,81 @@ Pin: `taskset -c 2`, CPU verified with `sched_getcpu()` inside the PMU window
 Clock: `core_ghz` snapshot per run (2.99–3.14 GHz observed); `cycles_per_byte`
 comes from the PMU cycles counter only, never from TSC.
 
+## Kernel 3 — `memcpy_sse2` (16B blocks, unrolled 4x)
+
+Source `e082da7` was **withdrawn before any timing** and fixed in `43f01dc`: see
+"defect" below. Verify PASS on znver2, znver3, v3 *after* the fix. 9 windows x
+5 reps, pinned, 0 migrated reps. Report: `results/phase2_sse2_analysis.txt`;
+CSVs: `results/phase2_sse2_{znver2,znver3,v3}.csv`.
+
+### Defect: rung 3 first compiled to AVX, not SSE2
+
+With `-mavx2` in the target flags and the file outside `SCALAR_SRCS`, clang's SLP
+vectorizer merged two adjacent `_mm_loadu_si128` intrinsics into one 32-byte
+`vmovups` and the rung ran on `ymm` registers — rung 4 wearing rung 3's name,
+which would have made the kernel-3 vs kernel-4 comparison meaningless. Caught by
+reading the generated assembly before timing. `make` now compiles that one TU
+with `-mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize`, and the regenerated
+assembly shows **0 `ymm` references, `movups %xmm0..3`, 0 `call` instructions**.
+
+### Incremental gain vs kernel 2 (`min_of_mins`, same windows)
+
+| size | znver2 | znver3 | v3 | band-aware verdict |
+|--:|--:|--:|--:|:--|
+| 16 B | −4.4% | +0.0% | +3.9% | within-noise (all) |
+| 32 B | +28.6% | **−20.1%** | +28.9% | WIN / **LOSS** / WIN |
+| 64 B | +54.2% | +37.7% | +54.3% | WIN |
+| 128 B | +67.6% | +54.0% | +69.3% | WIN |
+| 256 B–1 KB | +75.6…+77.1% | +64.8…+71.1% | +75.2…+77.3% | WIN |
+| 4–64 KB | +71.2…+73.3% | +64.8…+69.4% | +71.4…+73.5% | WIN |
+| 256 KB–4 MB | +60.4…+69.1% | +53.4…+62.9% | +62.6…+68.8% | WIN |
+
+**Measured crossover between rung 2 and rung 3: 32 B** on znver2 and v3, **64 B**
+on znver3 (where 32 B is a 20.1% *loss*). Below 32 B the two rungs execute the
+same byte fast path, so 16 B is within-noise as expected.
+
+**cycles/byte from `min_of_mins`, median over sizes >=64 B:**
+
+| target | word (k2) | sse2 (k3) | glibc |
+|:--|--:|--:|--:|
+| znver2 | 0.3169 | **0.0864** | 0.0729 |
+| znver3 | 0.2339 | **0.0769** | 0.0702 |
+| v3 | 0.4171 | **0.0848** | 0.0712 |
+
+### Where SSE2 beats glibc: nowhere (explicit answer)
+
+**LOSS at every size on every target** under the band-aware verdict — there is no
+size where SSE2 first beats glibc. The gap is nevertheless narrow at the top:
+`ours:glibc` is **1.05x at 4 MB** and 1.09–1.10x at 1 MB (znver2), 1.10–1.17x for
+every size >=64 KB, and widens to 1.94x at 4 KB.
+
+| size | znver2 | znver3 | v3 |
+|--:|--:|--:|--:|
+| 32 B | 1.25x | 1.50x | 1.25x |
+| 1 KB | 1.82x | 1.82x | 1.83x |
+| 4 KB | **1.94x** | 1.94x | 1.95x |
+| 64 KB | 1.17x | 1.17x | 1.17x |
+| 1 MB | 1.10x | 1.09x | 1.09x |
+| 4 MB | **1.05x** | 1.06x | 1.14x |
+
+### Codegen across the three targets
+
+54 instructions, 18 distinct mnemonics, **208 bytes** — identical counts on all
+three. znver2 == znver3 exactly; znver2/znver3 vs v3 differ by **4 moved lines
+with an identical mnemonic multiset**, i.e. two `lea` instructions in a different
+position, **not** an instruction-set difference. (The script printed
+"instruction-set differences" here until it was fixed to compare sorted
+multisets; see the defect list.)
+
+### Rule 2 outcome — and a rules conflict that needs your ruling
+
+Under ratified amendment 2, **11-12 of 13 sizes are UNSTABLE for every target**
+(window spreads 11.8%–48.9%). Taken literally, amendment 2 therefore denies a
+claim to almost every measured effect above, including +77% wins — while the same
+measurements pass amendment 1 cleanly. The two amendments disagree on this data
+at almost every size, and they have never been ranked against each other.
+Presented as measured, not claimed, pending your ruling.
+
 ## Amendments in force (user-ratified) — see MEASUREMENT_PROTOCOL.md §3a/§3b
 
 1. **Band-aware claim floor (wins over rule 3).** The applicable floor is
