@@ -50,7 +50,7 @@ ifeq ($(filter $(TARGET),$(TARGETS)),)
 $(error TARGET must be one of: $(TARGETS))
 endif
 
-.PHONY: all bench single perf objdump plot clean list audit
+.PHONY: all bench single perf objdump plot clean list audit snapshot
 
 all: $(BINS)
 bench: $(BINS)
@@ -101,6 +101,29 @@ audit: $(BINS)
 	  done; \
 	done; \
 	exit $$fail
+
+# ---- committed CSV snapshots (frozen record of finalized kernels) ----------
+# results/*.csv is gitignored (rewritten every run). A kernel that has passed
+# verify and completed its benchmark is copied into results/committed/, which IS
+# tracked. A snapshot that already exists is FROZEN: this target refuses to
+# overwrite one that differs from the current run, because a record that
+# silently changes is not a record. Same data re-copied is a no-op.
+SNAPSHOT_IMPLS := ref_scalar naive word
+snapshot: $(BINS)
+	@mkdir -p results/committed; n=0; refused=0; \
+	for impl in $(SNAPSHOT_IMPLS); do \
+	  for t in $(TARGETS); do \
+	    src=results/phase2_$$impl_$$t.csv; \
+	    dst=results/committed/phase2_$$impl_$$t.csv; \
+	    [ -f "$$src" ] || continue; \
+	    if [ -f "$$dst" ] && ! cmp -s "$$src" "$$dst"; then \
+	      echo "  REFUSED  $$dst (frozen file differs from $$src)"; refused=$$((refused+1)); \
+	    else \
+	      cp "$$src" "$$dst"; echo "  snapshot $$dst"; n=$$((n+1)); \
+	    fi; \
+	  done; \
+	done; \
+	echo "snapshot: $$n file(s) in results/committed, $$refused refused (frozen)"
 
 # ---- phase 4 counter validation -------------------------------------------
 perf: $(BINS)

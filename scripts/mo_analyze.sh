@@ -37,7 +37,7 @@ mkdir -p results
 
 awk -v K="$K" -v PREV="$PREV" -v TARGET="$TARGET" -v OP="$OP" \
     -v FLOOR="$FLOOR" -v BAND_FLOOR="$BAND_FLOOR" -v STABLE_PCT="$STABLE_PCT" \
-    -v CSV="$CSV" '
+    -v SPREAD_MAX="${SPREAD_MAX:-10}" -v CSV="$CSV" '
 function cls(n) {
     if (n < 64)        return "tiny_<64B"
     if (n <= 4096)     return "small_64B-4KB"
@@ -115,12 +115,17 @@ END {
     # Cumulative min_of_mins per window, per key, so rule 2 and the band both
     # use the same cumulative definition of min_of_mins.
     for (key in gmin) {
-        run = 0
+        run = 0; lo = 0; hi = 0
         for (w = 1; w <= winmax; w++) {
             wk = w "|" key
-            if ((wk) in wmin) { if (run == 0 || wmin[wk] < run) run = wmin[wk] }
+            if ((wk) in wmin) {
+                if (run == 0 || wmin[wk] < run) run = wmin[wk]
+                if (lo == 0 || wmin[wk] < lo) lo = wmin[wk]
+                if (wmin[wk] > hi) hi = wmin[wk]
+            }
             cum[w "|" key] = run
         }
+        wlo[key] = lo; whi[key] = hi
     }
     for (si = 1; si <= ns; si++) {
         n = S[si]
@@ -193,9 +198,9 @@ END {
     printf "\nrule 2 evidence for %s: cumulative min_of_mins per window (ns)\n", K
     printf "| size |"
     for (w = 1; w <= winmax; w++) printf " w%d |", w
-    printf " floor reached at | last-2 change | rule 2 |\n|--:|"
+    printf " floor at | per-window spread | last-2 change | rule 2 (>%s%% spread = UNSTABLE) |\n|--:|", SPREAD_MAX
     for (w = 1; w <= winmax; w++) printf "--:|"
-    print " --:| --:|:--|"
+    print " --:| --:| --:|:--|"
     for (si = 1; si <= ns; si++) {
         n = S[si]
         kk = K "|" OP "|" n
@@ -210,11 +215,13 @@ END {
         for (w = 1; w <= winmax; w++) if ((w "|" kk) in cum && cum[w "|" kk] == gmin[kk]) { f = w; break }
         a = cum[(winmax - 1) "|" kk]; b = cum[winmax "|" kk]
         ch = (a > 0) ? 100 * (b - a) / a : 0
-        printf " w%d | %+.4f%% | %s |\n", f, ch, (abs(ch) <= STABLE_PCT) ? "stable" : "UNSTABLE"
+        spr2 = (wlo[kk] > 0) ? 100 * (whi[kk] - wlo[kk]) / wlo[kk] : 0
+        printf " w%d | %.2f%% | %+.4f%% | %s |\n", f, spr2, ch,
+               (spr2 <= SPREAD_MAX) ? "stable" : "UNSTABLE"
     }
 
     # ---- CSV -------------------------------------------------------------
-    printf "impl,target,op,size_bytes,windows,min_of_mins_ns,cpb_at_min,gbps_at_min,delta_vs_prev_pct,delta_vs_glibc_pct,null_band_pct,claim_vs_prev,claim_vs_glibc,claim_band_vs_prev,floor_window,rule2_last2_change_pct,rule2\n" > CSV
+    printf "impl,target,op,size_bytes,windows,min_of_mins_ns,cpb_at_min,gbps_at_min,delta_vs_prev_pct,delta_vs_glibc_pct,null_band_pct,rule3_verdict_vs_prev,band_verdict_vs_prev,band_verdict_vs_glibc,floor_window,window_spread_pct,rule2_last2_change_pct,rule2\n" > CSV
     for (mi = 1; mi <= 3; mi++) {
         impl = (mi == 1) ? PREV : ((mi == 2) ? K : "glibc")
         for (si = 1; si <= ns; si++) {
@@ -233,11 +240,12 @@ END {
             for (w = 1; w <= winmax; w++) if ((w "|" kk) in cum && cum[w "|" kk] == gmin[kk]) { f = w; break }
             a = cum[(winmax - 1) "|" kk]; b = cum[winmax "|" kk]
             ch = (a > 0) ? 100 * (b - a) / a : 0
-            r2 = (abs(ch) <= STABLE_PCT) ? "stable" : "UNSTABLE"
-            csvp = (impl == PREV) ? "-" : claim(dvp, FLOOR)
-            csvg = (impl == "glibc") ? "-" : claim(dvg, FLOOR)
-            csvb = (impl == PREV) ? "-" : claim(dvp, eff)
-            printf "%s,%s,%s,%d,%d,%.1f,%.4f,%.4f,%+.2f,%+.2f,%.2f,%s,%s,%s,%d,%+.4f,%s\n", impl, TARGET, OP, n, wcount[kk] + 0, gmin[kk], cpv, gbs, dvp, dvg, bd, csvp, csvg, csvb, f, ch, r2 > CSV
+            spr2 = (wlo[kk] > 0) ? 100 * (whi[kk] - wlo[kk]) / wlo[kk] : 0
+            r2 = (spr2 <= SPREAD_MAX) ? "stable" : "UNSTABLE"
+            csvp = (impl == PREV) ? "-" : claim(dvp, FLOOR)     # rule3_verdict
+            csvb = (impl == PREV) ? "-" : claim(dvp, eff)       # band_verdict (wins)
+            csvg = (impl == "glibc") ? "-" : claim(dvg, eff)
+            printf "%s,%s,%s,%d,%d,%.1f,%.4f,%.4f,%+.2f,%+.2f,%.2f,%s,%s,%s,%d,%.2f,%+.4f,%s\n", impl, TARGET, OP, n, wcount[kk] + 0, gmin[kk], cpv, gbs, dvp, dvg, bd, csvp, csvb, csvg, f, spr2, ch, r2 > CSV
         }
     }
     printf "\nwrote %s\n", CSV

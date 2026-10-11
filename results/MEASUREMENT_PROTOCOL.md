@@ -46,15 +46,31 @@ contaminated. We therefore measure the floor and compare floors.
    Cycles come from the PMU (`PERF_COUNT_HW_CPU_CYCLES`), never from rdtsc/TSC.
    The paired `min_ns` and its `cycles/byte` come from the same timed region, so
    they describe the same execution.
-2. **Repetition: 5 reps per window, minimum 3 windows** per
-   `(impl, target, op, size)`. Keep adding windows until `min_of_mins` is stable
-   to **≤0.5 %** across the last two windows. **Cap: 9 windows.**
-3. **Claim floor: Δ`min_of_mins` must exceed 1.5 %** on the same
-   `(target, op, size)` measured the same way. Anything ≤1.5 % is reported as
-   **within-noise** and is not a win, a loss, or a tie-breaker.
-   The floor is 1.5 % rather than the ~3.5 % that the ns-median noise would
-   justify, because `min_of_mins` is stable to 0.1 % and the floor must still
-   cover the 0.5 % window-stability tolerance plus cross-window drift.
+2. **Repetition (RATIFIED, amendment 2 in §3b): 5 reps per window and
+   ALWAYS 9 windows** per `(impl, target, op, size)`. There is **no early stop**:
+   the 0.5 % stability rule was measured to quit before a deep floor is reached
+   (`min_of_mins` only ever decreases as windows accumulate, so campaigns that
+   stop at different window counts are not comparable). Nine windows is cheap.
+   After the 9th window, a key whose per-window `min_ns` spread exceeds **10 %**
+   is marked **`UNSTABLE` and carries no claim** — the label is propagated into
+   the CSV, the analysis file and the report; an unstable key is never averaged
+   in or quietly reported as a win.
+3. **Claim floor (RATIFIED, amendment 1 in §3a): the applicable floor is
+   `max(1.5 %, measured_null_band(target, op, size))`.** `measured_null_band` is
+the difference between the two identical byte loops (`naive` vs `ref_scalar`)
+measured **in the same windows** at that same size, so the floor is per
+`(target, op, size)` and cannot be assumed. **Both verdicts are published in
+every report and every CSV:**
+
+   * `rule3_verdict` — the mandated flat 1.5 % comparison, kept visible so the
+     places where the flat floor was wrong stay auditable;
+   * `band_verdict` — the comparison against `max(1.5 %, band)`.
+
+   **When the two disagree, `band_verdict` wins.** A claim below the applicable
+   floor is reported as **within-noise** and is not a win, a loss, or a
+tie-breaker. Rule 3 was originally justified by `min_of_mins` being stable to
+0.1 %; that holds only in the middle of this box's size range, which is exactly
+why the band is now measured rather than assumed.
 4. **Reps are interleaved across impls inside one process** (harness feature), so
    an interference burst is shared between the compared kernels instead of being
    charged to whichever one ran during it.
@@ -72,7 +88,7 @@ contaminated. We therefore measure the floor and compare floors.
    assumed.
 10. A claim of a speedup we did not measure with PMU cycles is forbidden.
 
-### 3a. PENDING AMENDMENT — the 1.5% floor is not safe at every size
+### 3a. Amendment 1 — band-aware claim floor (RATIFIED)
 
 Rule 3 as approved assumes `min_of_mins` is stable to 0.1% everywhere. Measured
 over 9 windows x 5 reps, that holds for the middle of the size range and **fails
@@ -93,20 +109,24 @@ their difference *is* the band at that size, in those same windows:
 Where the band is 21-25%, a 1.5% "win" is pure artefact. `scripts/mo_analyze.sh`
 therefore publishes **both** verdicts side by side and never hides the gap: the
 mandated rule-3 verdict at 1.5%, and a **band-aware** verdict at
-`max(1.5%, measured band)`. Every claim in a kernel report quotes the band-aware
-verdict until this amendment is either ratified or rejected. Nothing is
-suppressed: both columns are in every per-target CSV.
+`max(1.5%, measured band)`. **RATIFIED: the band-aware verdict is the claim rule,
+and where the two disagree the band verdict wins.** The rule-3 verdict stays in
+every table and every CSV so the sizes where the flat floor was wrong remain
+auditable. Nothing is suppressed.
 
-### 3b. PENDING AMENDMENT — the 0.5% early stop can miss a deep floor
+### 3b. Amendment 2 — always run to the 9-window cap (RATIFIED)
 
-Rule 2's stop is met too early in practice. Evidence: znver2's 4 KB key was flat
-for six consecutive windows and then improved **20.05%** at window 9
-(1617.4 -> 1293.1 ns), and v3 stabilised at window 5 on a 0.04% change. Because
+Rule 2's original stop is met too early in practice. Evidence: znver2's 4 KB key
+was flat for six consecutive windows and then improved **20.05%** at window 9
+(1617.4 -> 1293.1 ns), and v3 stopped at window 5 on a 0.04% change. Because
 `min_of_mins` only ever decreases as windows accumulate, campaigns that stop at
 different window counts are not comparable. Cross-target and cross-kernel
-campaigns therefore run to the 9-window cap (`RUN_TO_CAP=1`) and publish the
-per-key rule-2 verdict, marking keys that are still moving as `UNSTABLE` rather
-than averaging them in. An `UNSTABLE` key carries no claim.
+campaigns therefore **always** run to the 9-window cap (`RUN_TO_CAP=1`, which is
+now the default path for every campaign) and publish the per-key rule-2 verdict.
+A key whose per-window `min_ns` spread exceeds **10%** after 9 windows is marked
+`UNSTABLE` and carries no claim — the znver2 256 KB case is the first example.
+An `UNSTABLE` key is never averaged in, and the label is propagated into the CSV,
+the analysis file and the report.
 
 ## 4. What this protocol rules out
 
@@ -139,7 +159,30 @@ scripts/mo_measure.sh <target> <impls> memcpy <sizes> <log>   # ≤9 windows, pi
 scripts/mo_analyze.sh <log> <kernel> <prev> <target> [op]   # report + CSV
 ```
 
-`mo_measure.sh` enforces the window count and the ≤0.5 % stability stop;
-`mo_analyze.sh` applies the 1.5 % claim floor and writes
-`results/phase2_<kernel>_<target>.csv`. Neither script post-processes a number by
-hand.
+`mo_measure.sh` enforces the window count (always 9) and the pinning;
+`mo_analyze.sh` applies the band-aware claim floor, publishes both verdicts and
+the per-key `UNSTABLE` label, and writes `results/phase2_<kernel>_<target>.csv`.
+Neither script post-processes a number by hand.
+
+## 7. Committed CSV snapshots (the frozen record)
+
+`results/*.csv` stays gitignored: those files are rewritten by every run and
+committing them directly would pollute history. Finalized kernels are therefore
+snapshotted:
+
+```sh
+make snapshot        # results/phase2_<impl>_<target>.csv -> results/committed/...
+```
+
+`results/committed/*.csv` is intentionally **not** ignored. Rules:
+
+* only a kernel that has passed verify and completed its benchmark is
+  snapshotted — a snapshot is a finalization event, not a checkpoint;
+* **snapshots are immutable.** `make snapshot` refuses to overwrite an existing
+  committed file that differs from the current run and says so, because a frozen
+  record that silently changes is not a record. Re-running the same measurement
+  is a no-op (`cmp -s` equal); a genuinely different result needs a new name and
+  an explanation, not an overwrite;
+* snapshotted so far: `phase2_naive_{znver2,znver3,v3}.csv` and
+  `phase2_word_{znver2,znver3,v3}.csv` (commit `phase2: snapshot committed CSVs
+  for naive and word`).

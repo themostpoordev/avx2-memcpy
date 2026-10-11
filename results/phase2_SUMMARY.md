@@ -8,6 +8,33 @@ Pin: `taskset -c 2`, CPU verified with `sched_getcpu()` inside the PMU window
 Clock: `core_ghz` snapshot per run (2.99–3.14 GHz observed); `cycles_per_byte`
 comes from the PMU cycles counter only, never from TSC.
 
+## Amendments in force (user-ratified) — see MEASUREMENT_PROTOCOL.md §3a/§3b
+
+1. **Band-aware claim floor (wins over rule 3).** The applicable floor is
+   `max(1.5%, measured null band at that target/op/size)`. Both verdicts are in
+   every table and CSV; where they disagree the band verdict is the claim rule.
+2. **Always 9 windows, no early stop.** After 9 windows a key whose per-window
+   `min_ns` spread exceeds **10%** is marked `UNSTABLE` and carries **no claim**.
+   Verified against the case cited when ratifying: word/znver2/256 KB spreads
+   10.4% and is flagged.
+
+**Consequence, and a conflict worth a ruling.** Under rule 2-as-ratified the
+UNSTABLE label is *very* common, because it penalises an unstable floor even when
+the measured effect is many times the floor:
+
+| kernel | target | stable keys | UNSTABLE keys |
+|:--|:--|--:|--:|
+| naive | znver2 / znver3 / v3 | 18 / 16 / 12 | 21 / 23 / 27 |
+| word | znver2 / znver3 / v3 | 21 / 21 / 17 | 18 / 18 / 22 |
+
+(counts are over all rows in each CSV, i.e. 13 sizes x 3 impls = 39.)
+That marks several *large* effects unclaimable: `word` at 32 B on znver2 spreads
+18.4% and at 64 B 15.6%, so the ~4x win you acknowledged at 32 B carries no claim
+under amendment 2 even though it clears the band cleanly under amendment 1.
+Amendments 1 and 2 therefore disagree on the same measurement, and the two rules
+have not been ranked against each other the way rule 3 and the band were. Both
+are implemented exactly as written; this is flagged, not smoothed over.
+
 ## Kernel 2 — `memcpy_word` (8-byte chunks + byte tail)
 
 Committed before benchmarking: `44ba1cb`. Verify PASS on znver2, znver3 and v3
@@ -68,11 +95,15 @@ tuning target is irrelevant to this rung. Files:
 `results/codegen_diff_word_znver2_vs_znver3.diff`, `..._znver2_vs_v3.diff`,
 `..._znver3_vs_v3.diff`.
 
-### Rule 2 outcome
+### Rule 2 outcome (re-evaluated under ratified amendment 2)
 
-38 of 39 keys stable (last-two-window change +0.0000%); floors reached at windows
-1–8. One key **UNSTABLE**: znver2 at 256 KB, which moved −1.044% at window 9 —
-no claim is made at that size. Notably the word rung's floors arrive much earlier
+Under the original 0.5%-cumulative criterion 38 of 39 keys were stable and only
+znver2 256 KB was UNSTABLE. Under the **ratified >10% per-window-spread** criterion
+the same measurements flag `word` as UNSTABLE at 32 B, 64 B and 4 MB on znver2,
+at 32/128/256/512/1024 B and 4 MB on znver3, and at 16/64/256/512/1024 B and 4 MB
+on v3 (per-key spreads are in the CSVs, column `window_spread_pct`). The
+criterion changed, not the data — the per-window floors of these kernels genuinely
+move by 10–19% even when their cumulative `min_of_mins` is flat to 0.0000%. Notably the word rung's floors arrive much earlier
 than rung 1's (usually w1–w2 vs w1–w7): a 4x longer per-call copy averages the
 interference better inside each rep.
 

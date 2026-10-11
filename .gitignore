@@ -12,6 +12,12 @@ results/*.log
 results/*.svg
 *.tmp
 
+# ---- but the FROZEN snapshots of finalized kernels ARE tracked ----
+# (`results/*.csv` does not cross directories, so committed/ was never ignored;
+#  these negations are explicit so the intent survives future edits)
+!results/committed/
+!results/committed/*.csv
+
 # ---- .recon probe binaries (the .c probe sources ARE committed) ----
 .recon/*.o
 .recon/uarch
