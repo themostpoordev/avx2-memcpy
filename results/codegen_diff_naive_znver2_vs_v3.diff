@@ -1,0 +1,6 @@
+# codegen diff: kernel=naive  znver2 vs v3
+# compared: build/znver2/naive.asm  vs  build/v3/naive.asm
+#           (function-extracted, address-stripped instruction streams from src/memcpy_naive.c)
+# znver2: instructions=11  distinct_mnemonics=10  func_bytes=33
+# v3: instructions=11  distinct_mnemonics=10  func_bytes=33
+# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)

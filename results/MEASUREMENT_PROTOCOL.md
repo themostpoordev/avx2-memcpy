@@ -72,6 +72,42 @@ contaminated. We therefore measure the floor and compare floors.
    assumed.
 10. A claim of a speedup we did not measure with PMU cycles is forbidden.
 
+### 3a. PENDING AMENDMENT — the 1.5% floor is not safe at every size
+
+Rule 3 as approved assumes `min_of_mins` is stable to 0.1% everywhere. Measured
+over 9 windows x 5 reps, that holds for the middle of the size range and **fails
+at the extremes**, so the artefact band is now measured inside every campaign
+instead of assumed. `naive` (kernel 1) and `ref_scalar` hold the same byte loop
+with byte-identical instruction streams (`results/codegen_diff_naive_*.diff`), so
+their difference *is* the band at that size, in those same windows:
+
+| size | znver2 | znver3 | v3 |
+|--:|--:|--:|--:|
+| 16 B | 12.52% | 0.01% | 4.40% |
+| 64 B | 10.90% | 0.86% | 1.17% |
+| 128 B-1 MB | 0.00-0.06% | 0.15-4.56% | 0.00-1.23% |
+| 512 B | 0.05% | **25.33%** | 0.00% |
+| 4 KB | 0.05% | 0.15% | **25.15%** |
+| 4 MB | 4.76% | 4.00% | 1.75% |
+
+Where the band is 21-25%, a 1.5% "win" is pure artefact. `scripts/mo_analyze.sh`
+therefore publishes **both** verdicts side by side and never hides the gap: the
+mandated rule-3 verdict at 1.5%, and a **band-aware** verdict at
+`max(1.5%, measured band)`. Every claim in a kernel report quotes the band-aware
+verdict until this amendment is either ratified or rejected. Nothing is
+suppressed: both columns are in every per-target CSV.
+
+### 3b. PENDING AMENDMENT — the 0.5% early stop can miss a deep floor
+
+Rule 2's stop is met too early in practice. Evidence: znver2's 4 KB key was flat
+for six consecutive windows and then improved **20.05%** at window 9
+(1617.4 -> 1293.1 ns), and v3 stabilised at window 5 on a 0.04% change. Because
+`min_of_mins` only ever decreases as windows accumulate, campaigns that stop at
+different window counts are not comparable. Cross-target and cross-kernel
+campaigns therefore run to the 9-window cap (`RUN_TO_CAP=1`) and publish the
+per-key rule-2 verdict, marking keys that are still moving as `UNSTABLE` rather
+than averaging them in. An `UNSTABLE` key carries no claim.
+
 ## 4. What this protocol rules out
 
 * Comparing NS-across sessions: the core clock moved 2.73→3.06 GHz between
@@ -100,7 +136,7 @@ contaminated. We therefore measure the floor and compare floors.
 ```sh
 make                                              # 3 targets, 0 warnings
 scripts/mo_measure.sh <target> <impls> memcpy <sizes> <log>   # ≤9 windows, pinned
-scripts/mo_analyze.sh <log> <kernel> <prev> [op]              # report + CSV
+scripts/mo_analyze.sh <log> <kernel> <prev> <target> [op]   # report + CSV
 ```
 
 `mo_measure.sh` enforces the window count and the ≤0.5 % stability stop;

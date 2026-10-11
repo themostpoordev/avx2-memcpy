@@ -53,16 +53,49 @@ for t in znver2 znver3 v3; do
         "$t" "$n_ins" "$n_mnem" "$bytes"
 done
 
+# metric <target> <ins|mnem|bytes> — recomputed per pair so the saved diff can
+# describe itself.
+metric() {
+    case "$2" in
+        ins)   wc -l < "build/$1/$KERNEL.asm" ;;
+        mnem)  sort -u "build/$1/$KERNEL.mnem" | wc -l ;;
+        bytes) sz=$(nm -S "build/$1/$OBJ_REL" 2>/dev/null | awk -v s="$SYM" '$4 == s { print $2; exit }')
+               if [ -n "${sz:-}" ]; then printf '%d' "0x$sz"; else printf '?'; fi ;;
+    esac
+}
+
 echo
 for pair in "znver2 znver3" "znver2 v3" "znver3 v3"; do
     set -- $pair
     A="$1"
     B="$2"
     OUT="results/codegen_diff_${KERNEL}_${A}_vs_${B}.diff"
-    if diff -u "build/$A/$KERNEL.asm" "build/$B/$KERNEL.asm" > "$OUT" 2>&1; then
+    BODY="${TMPDIR:-/tmp}/codegen_diff_$$.body"
+    same=0
+    if diff -u "build/$A/$KERNEL.asm" "build/$B/$KERNEL.asm" > "$BODY" 2>&1; then
+        same=1
+    fi
+    changed=$(grep -c '^[+-][^+-]' "$BODY" || true)
+    # The header matters: an empty body is the correct RESULT for identical
+    # codegen, but a 0-byte file cannot be told apart from a failed or skipped
+    # comparison. Every saved diff now states what was compared and the verdict.
+    {
+        echo "# codegen diff: kernel=$KERNEL  ${A} vs ${B}"
+        echo "# compared: build/${A}/${KERNEL}.asm  vs  build/${B}/${KERNEL}.asm"
+        echo "#           (function-extracted, address-stripped instruction streams from ${SRC})"
+        echo "# ${A}: instructions=$(metric "$A" ins)  distinct_mnemonics=$(metric "$A" mnem)  func_bytes=$(metric "$A" bytes)"
+        echo "# ${B}: instructions=$(metric "$B" ins)  distinct_mnemonics=$(metric "$B" mnem)  func_bytes=$(metric "$B" bytes)"
+        if [ "$same" = "1" ]; then
+            echo "# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)"
+        else
+            echo "# verdict: DIFFERENT — ${changed} changed instruction line(s); unified diff follows"
+        fi
+    } > "$OUT"
+    cat "$BODY" >> "$OUT"
+    rm -f "$BODY"
+    if [ "$same" = "1" ]; then
         echo "${KERNEL}: ${A} == ${B} (identical instruction streams) -> $OUT"
     else
-        changed=$(grep -c '^[+-][^+-]' "$OUT" || true)
         echo "${KERNEL}: ${A} != ${B} (${changed} changed instruction lines) -> $OUT"
     fi
     # mnemonic-only difference (ignores register allocation)
