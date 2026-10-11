@@ -109,12 +109,19 @@ audit: $(BINS)
 # overwrite one that differs from the current run, because a record that
 # silently changes is not a record. Same data re-copied is a no-op.
 SNAPSHOT_IMPLS := ref_scalar naive word
+# NOTE on the quoting below - both of these were bugs in the first version:
+#   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
+#     `impl_` (underscore is an identifier character) followed by `$t`, so every
+#     path became results/phase2_znver2.csv and the target copied 0 files.
+#   * `$$n`, `$$refused` and `$$((...))` need the DOUBLE dollar: a single `$` is
+#     consumed by make, not by the shell, so `$n` expanded to empty and the
+#     arithmetic was eaten as a make variable reference.
 snapshot: $(BINS)
 	@mkdir -p results/committed; n=0; refused=0; \
 	for impl in $(SNAPSHOT_IMPLS); do \
 	  for t in $(TARGETS); do \
-	    src=results/phase2_$$impl_$$t.csv; \
-	    dst=results/committed/phase2_$$impl_$$t.csv; \
+	    src=results/phase2_$${impl}_$${t}.csv; \
+	    dst=results/committed/phase2_$${impl}_$${t}.csv; \
 	    [ -f "$$src" ] || continue; \
 	    if [ -f "$$dst" ] && ! cmp -s "$$src" "$$dst"; then \
 	      echo "  REFUSED  $$dst (frozen file differs from $$src)"; refused=$$((refused+1)); \
@@ -123,7 +130,8 @@ snapshot: $(BINS)
 	    fi; \
 	  done; \
 	done; \
-	echo "snapshot: $$n file(s) in results/committed, $$refused refused (frozen)"
+	echo "snapshot: $$n file(s) in results/committed, $$refused refused (frozen)"; \
+	[ "$$refused" = "0" ] || { echo "snapshot: refusing to finish with frozen files needing review" >&2; exit 1; }
 
 # ---- phase 4 counter validation -------------------------------------------
 perf: $(BINS)
