@@ -37,9 +37,17 @@ const impl_t g_impls[] = {
     { "sse2", memcpy_sse2, NULL,
       "kernel 3: 16B x4 unrolled, _mm_loadu_si128/_mm_storeu_si128, scalar tail" },
 
+    { "avx2", memcpy_avx2, NULL,
+      "kernel 4: 32B x4 unrolled, _mm256_loadu_si256/_mm256_storeu_si256, prefetch +1 line" },
+
+    { "avx2_pf2", memcpy_avx2_pf2, NULL,
+      "kernel 4 variant: identical body, prefetch distance +2 cache lines" },
+
+    { "avx2_pf4", memcpy_avx2_pf4, NULL,
+      "kernel 4 variant: identical body, prefetch distance +4 cache lines" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
-    { "avx2",    memcpy_avx2,    memset_avx2,    "32B x4 unrolled, cached store" },
     { "avx2_nt", memcpy_avx2_nt, memset_avx2_nt, "32B x4, non-temporal, threshold-gated" },
     { "asm",     memcpy_asm,     memset_asm,     "hand-written clang-integrated asm (.S)" },
     { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },

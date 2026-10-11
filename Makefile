@@ -120,7 +120,7 @@ audit: $(BINS)
 # tracked. A snapshot that already exists is FROZEN: this target refuses to
 # overwrite one that differs from the current run, because a record that
 # silently changes is not a record. Same data re-copied is a no-op.
-SNAPSHOT_IMPLS := ref_scalar naive word sse2
+SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4
 # NOTE on the quoting below - both of these were bugs in the first version:
 #   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
 #     `impl_` (underscore is an identifier character) followed by `$t`, so every

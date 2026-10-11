@@ -1,0 +1,6 @@
+# codegen diff: kernel=avx2  znver2 vs znver3
+# compared: build/znver2/avx2.asm  vs  build/znver3/avx2.asm
+#           (function-extracted, address-stripped instruction streams from src/memcpy_avx2.c)
+# znver2: instructions=121  distinct_mnemonics=18  func_bytes=460
+# znver3: instructions=121  distinct_mnemonics=18  func_bytes=460
+# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)

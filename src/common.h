@@ -41,5 +41,8 @@ void *memset_ref(void *dst, int c, size_t n) NOINLINE;
 void *memcpy_naive(void *dst, const void *src, size_t n);   /* kernel 1 */
 void *memcpy_word(void *dst, const void *src, size_t n);    /* kernel 2 */
 void *memcpy_sse2(void *dst, const void *src, size_t n);    /* kernel 3 */
+void *memcpy_avx2(void *dst, const void *src, size_t n);    /* kernel 4 */
+void *memcpy_avx2_pf2(void *dst, const void *src, size_t n); /* kernel 4, prefetch +2 lines */
+void *memcpy_avx2_pf4(void *dst, const void *src, size_t n); /* kernel 4, prefetch +4 lines */
 
 #endif /* AVX2_MEM_COMMON_H */
