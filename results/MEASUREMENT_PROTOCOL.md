@@ -128,6 +128,29 @@ A key whose per-window `min_ns` spread exceeds **10%** after 9 windows is marked
 An `UNSTABLE` key is never averaged in, and the label is propagated into the CSV,
 the analysis file and the report.
 
+### 3c. Two-tier claim model (RATIFIED) — tier assignment and the Tier B floor
+
+Amendment 1 (band-aware floor) and amendment 2 (`UNSTABLE` = no claim) contradict
+each other on real data: Kernel 3 passes the band floor at 12 of 13 sizes while
+11-12 of those same sizes are `UNSTABLE`. Neither rule wins. The resolution is a
+two-tier model, where tier assignment uses the same per-window spread that rule 2
+already computes:
+
+* **Tier A — spread ≤10 %.** Claim floor = `max(1.5 %, measured_null_band(size))`.
+  Publish `rule3_verdict` (against 1.5 %) and `band_verdict` (against the band);
+  **`band_verdict` is authoritative for Tier A sizes.**
+* **Tier B — spread >10 %.** Do **not** use `null_band`: at these sizes it
+  under-states the uncertainty. Claim floor = **25 % flat**. A delta >25 % is
+  **claimed**; a delta ≤25 % is reported as **"measured, not claimed"**. The
+  spread value is always published so a reader can see why the size is Tier B.
+
+Rationale: `UNSTABLE` means the fine-grain floor is unusable at that size, not
+that the size is unmeasurable. Large effects stay detectable and claimable —
+Kernel 3's +54…77 % gains exceed 25 % and are therefore claims, not mere
+measurements. Every per-target CSV carries `tier`, `tier_floor_pct` and the tier
+verdicts alongside the rule-3 and band verdicts, so no claim can be traced to a
+floor that was not published.
+
 ## 4. What this protocol rules out
 
 * Comparing NS-across sessions: the core clock moved 2.73→3.06 GHz between

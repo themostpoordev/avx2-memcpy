@@ -37,7 +37,8 @@ mkdir -p results
 
 awk -v K="$K" -v PREV="$PREV" -v TARGET="$TARGET" -v OP="$OP" \
     -v FLOOR="$FLOOR" -v BAND_FLOOR="$BAND_FLOOR" -v STABLE_PCT="$STABLE_PCT" \
-    -v SPREAD_MAX="${SPREAD_MAX:-10}" -v CSV="$CSV" '
+    -v SPREAD_MAX="${SPREAD_MAX:-10}" -v TIERB_FLOOR="${TIERB_FLOOR:-25}" \
+    -v CSV="$CSV" '
 function cls(n) {
     if (n < 64)        return "tiny_<64B"
     if (n <= 4096)     return "small_64B-4KB"
@@ -55,6 +56,20 @@ function clsname(c) {
 function abs(x) { return (x < 0) ? -x : x }
 function claim(d, fl) {
     if (abs(d) <= fl) return "within-noise"
+    return (d > 0) ? "WIN" : "LOSS"
+}
+# Two-tier claim model (MEASUREMENT_PROTOCOL.md section 3c):
+#   Tier A (spread <=10%) -> floor = max(1.5%, band); band verdict is authoritative
+#   Tier B (spread  >10%) -> floor = 25% flat; band is NOT used, it under-states
+# In Tier B a delta below 25% must read "measured" - it is not a claim either way.
+function tier_of(spread, smax) { return (spread <= smax) ? "A" : "B" }
+function tier_floor(tier, band,   e) {
+    if (tier == "B") return TIERB_FLOOR
+    e = (band > FLOOR) ? band : FLOOR
+    return e
+}
+function tier_claim(d, fl) {
+    if (abs(d) <= fl) return "measured"
     return (d > 0) ? "WIN" : "LOSS"
 }
 function median_of(D, n,   a, i, j, t) {
@@ -144,9 +159,9 @@ END {
     printf "null band = |naive vs ref_scalar|, two kernels with byte-identical instruction streams\n\n"
 
     # ---- detail by size ---------------------------------------------------
-    printf "| size | %s min_ns | %s min_ns | glibc min_ns | %s c/B | ours:glibc | d vs %s | rule3 vs %s | d vs glibc | rule3 vs glibc | null band | band-aware vs %s |\n",
-           PREV, K, K, PREV, PREV, PREV, PREV
-    print  "|--:|--:|--:|--:|--:|--:|--:|:--|--:|:--|--:|:--|"
+    printf "| size | tier | %s min_ns | %s min_ns | glibc min_ns | %s c/B | ours:glibc | d vs %s | rule3 | band | tier floor | TIER VERDICT vs %s |\n",
+           PREV, K, K, PREV, PREV
+    print  "|--:|:--|--:|--:|--:|--:|--:|--:|:--|:--|--:|:--|"
     for (si = 1; si <= ns; si++) {
         n = S[si]
         pk = PREV "|" OP "|" n; kk = K "|" OP "|" n; gk = "glibc|" OP "|" n
@@ -157,13 +172,14 @@ END {
         dvp = pm > 0 ? 100 * (pm - gmin[kk]) / pm : 0
         dvg = gm > 0 ? 100 * (gm - gmin[kk]) / gm : 0
         bd = band[n]
-        eff = (bd > FLOOR) ? bd : FLOOR
-        printf "| %d | %.1f | %.1f | %.1f | %.4f | %.2fx | %+.2f%% | %s | %+.2f%% | %s | %s | %s |\n",
-               n, pm, gmin[kk], gm, kc, (gm > 0 ? gmin[kk] / gm : 0),
+        spr2 = (wlo[kk] > 0) ? 100 * (whi[kk] - wlo[kk]) / wlo[kk] : 0
+        ti = tier_of(spr2, SPREAD_MAX)
+        tf = tier_floor(ti, bd)
+        printf "| %d | %s | %.1f | %.1f | %.1f | %.4f | %.2fx | %+.2f%% | %s | %s | %.1f%% | %s |\n",
+               n, ti, pm, gmin[kk], gm, kc, (gm > 0 ? gmin[kk] / gm : 0),
                dvp, (pm > 0) ? claim(dvp, FLOOR) : "-",
-               dvg, (gm > 0) ? claim(dvg, FLOOR) : "-",
-               (bd >= 0) ? sprintf("%.2f%%", bd) : "n/a",
-               (pm > 0) ? claim(dvp, eff) : "-"
+               (bd >= 0) ? claim(dvp, bd) : "n/a",
+               tf, (pm > 0) ? tier_claim(dvp, tf) : "-"
         cl = cls(n)
         if (pm > 0) { B[cl "|prev", ++bn[cl "|prev"]] = dvp }
         if (gm > 0) { B[cl "|glib", ++bn[cl "|glib"]] = dvg }
@@ -221,7 +237,7 @@ END {
     }
 
     # ---- CSV -------------------------------------------------------------
-    printf "impl,target,op,size_bytes,windows,min_of_mins_ns,cpb_at_min,gbps_at_min,delta_vs_prev_pct,delta_vs_glibc_pct,null_band_pct,rule3_verdict_vs_prev,band_verdict_vs_prev,band_verdict_vs_glibc,floor_window,window_spread_pct,rule2_last2_change_pct,rule2\n" > CSV
+    printf "impl,target,op,size_bytes,windows,min_of_mins_ns,cpb_at_min,gbps_at_min,delta_vs_prev_pct,delta_vs_glibc_pct,null_band_pct,rule3_verdict_vs_prev,band_verdict_vs_prev,band_verdict_vs_glibc,floor_window,window_spread_pct,rule2_last2_change_pct,rule2,tier,tier_floor_pct,tier_verdict_vs_prev,tier_verdict_vs_glibc\n" > CSV
     for (mi = 1; mi <= 3; mi++) {
         impl = (mi == 1) ? PREV : ((mi == 2) ? K : "glibc")
         for (si = 1; si <= ns; si++) {
@@ -242,10 +258,14 @@ END {
             ch = (a > 0) ? 100 * (b - a) / a : 0
             spr2 = (wlo[kk] > 0) ? 100 * (whi[kk] - wlo[kk]) / wlo[kk] : 0
             r2 = (spr2 <= SPREAD_MAX) ? "stable" : "UNSTABLE"
+            ti = tier_of(spr2, SPREAD_MAX)
+            tf = tier_floor(ti, bd)
             csvp = (impl == PREV) ? "-" : claim(dvp, FLOOR)     # rule3_verdict
-            csvb = (impl == PREV) ? "-" : claim(dvp, eff)       # band_verdict (wins)
+            csvb = (impl == PREV) ? "-" : claim(dvp, eff)       # band_verdict (Tier A authoritative)
             csvg = (impl == "glibc") ? "-" : claim(dvg, eff)
-            printf "%s,%s,%s,%d,%d,%.1f,%.4f,%.4f,%+.2f,%+.2f,%.2f,%s,%s,%s,%d,%.2f,%+.4f,%s\n", impl, TARGET, OP, n, wcount[kk] + 0, gmin[kk], cpv, gbs, dvp, dvg, bd, csvp, csvb, csvg, f, spr2, ch, r2 > CSV
+            ct1 = (impl == PREV) ? "-" : tier_claim(dvp, tf)    # tier verdict (authoritative)
+            ct2 = (impl == "glibc") ? "-" : tier_claim(dvg, tf)
+            printf "%s,%s,%s,%d,%d,%.1f,%.4f,%.4f,%+.2f,%+.2f,%.2f,%s,%s,%s,%d,%.2f,%+.4f,%s,%s,%.2f,%s,%s\n", impl, TARGET, OP, n, wcount[kk] + 0, gmin[kk], cpv, gbs, dvp, dvg, bd, csvp, csvb, csvg, f, spr2, ch, r2, ti, tf, ct1, ct2 > CSV
         }
     }
     printf "\nwrote %s\n", CSV

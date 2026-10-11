@@ -74,14 +74,26 @@ position, **not** an instruction-set difference. (The script printed
 "instruction-set differences" here until it was fixed to compare sorted
 multisets; see the defect list.)
 
-### Rule 2 outcome — and a rules conflict that needs your ruling
+### Rule 2 outcome, reclassified under the two-tier model
 
-Under ratified amendment 2, **11-12 of 13 sizes are UNSTABLE for every target**
-(window spreads 11.8%–48.9%). Taken literally, amendment 2 therefore denies a
-claim to almost every measured effect above, including +77% wins — while the same
-measurements pass amendment 1 cleanly. The two amendments disagree on this data
-at almost every size, and they have never been ranked against each other.
-Presented as measured, not claimed, pending your ruling.
+Under amendment 2 alone (11-12 of 13 sizes UNSTABLE) almost nothing was claimable.
+The ratified two-tier model resolves it, and Kernel 3's gains survive:
+
+| target | Tier A WIN | Tier B WIN | Tier B "measured, not claimed" |
+|:--|--:|--:|--:|
+| znver2 | 2 | 10 | 1 (16 B, -4.4%) |
+| znver3 | 2 | 9 | 2 |
+| v3 | 1 | 11 | 1 |
+
+So the +54-77% gains are **claims**, not merely measurements, under the Tier B flat
+25% floor; Tier A sizes use `max(1.5%, null band)`, which is tighter.
+
+**Caveat, from the H1-H5 diagnostics (`results/h4_diagnostics.md`): those Tier B
+labels are largely an artefact of the harness's 100-iteration cap.** Raising the
+timed window to 4000 iterations collapses the spread at 8/16/64 KB from
+43.69/48.91/n-a % to **0.75/1.48/0.68 %**. On the corrected window these sizes are
+Tier A, i.e. the claims become tighter than the Tier B ruling required.
+
 
 ## Amendments in force (user-ratified) — see MEASUREMENT_PROTOCOL.md §3a/§3b
 
