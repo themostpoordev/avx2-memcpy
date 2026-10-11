@@ -8,6 +8,74 @@ Pin: `taskset -c 2`, CPU verified with `sched_getcpu()` inside the PMU window
 Clock: `core_ghz` snapshot per run (2.99–3.14 GHz observed); `cycles_per_byte`
 comes from the PMU cycles counter only, never from TSC.
 
+## Kernel 2 — `memcpy_word` (8-byte chunks + byte tail)
+
+Committed before benchmarking: `44ba1cb`. Verify PASS on znver2, znver3 and v3
+(glibc reference, n=0..4096 with random offsets, 64 B canaries both sides).
+`make audit`: `vector_insns=0` on all three targets. 9 windows x 5 reps, pinned,
+0 migrated reps. Report: `results/phase2_word_analysis.txt`;
+CSVs: `results/phase2_word_{znver2,znver3,v3}.csv`.
+
+### Incremental gain vs kernel 1 (`min_of_mins`, same windows)
+
+| size | znver2 | znver3 | v3 |
+|--:|--:|--:|--:|
+| 16 B | **−14.3%** | −8.7% | **−23.9%** |
+| 32 B | +74.8% | +73.2% | +74.5% |
+| 64 B | +76.1% | +77.9% | +77.5% |
+| 128 B | +83.2% | +86.1% | +84.2% |
+| 256 B–4 MB | +78.8…+84.5% | +78.1…+84.4% | +79.2…+84.2% |
+
+All rows from 32 B up clear the mandated 1.5% floor **and** the measured null
+band, so they are wins, not artefacts. **16 B is a genuine loss on znver2
+(−14.3%) and v3 (−23.9%)**: the mandatory `<32 B` fast path costs a compare plus
+a jump before the byte loop that kernel 1 does not pay. On znver3 the −8.7% sits
+inside that target's 9.5% null band at 16 B and is therefore not claimable
+either way.
+
+**cycles/byte (median across sizes >=64 B, PMU cycles from the min rep):**
+
+| target | naive (k1) | word (k2) | glibc |
+|:--|--:|--:|--:|
+| znver2 | 1.4940 | 0.2282 | 0.0691 |
+| znver3 | 1.5105 | 0.2423 | 0.0695 |
+| v3 | 1.4546 | 0.2363 | 0.0666 |
+
+So the word rung buys **~6.3x fewer cycles/byte** than rung 1, and glibc still
+needs ~3.4x fewer than us.
+
+### vs glibc, by size class (rule 3 applied)
+
+Loss at **every** size on **every** target — no ties, no wins. Reported as such.
+Ratio `ours:glibc` on `min_of_mins`: best **1.25x** at 32 B (znver2, v3), worst
+**6.5x** at 1 KB (znver3); 2.4–3.3x for every size >=64 KB.
+
+| class | median d vs naive | median d vs glibc | vs naive (W/L/N) | vs glibc (W/L/N) |
+|:--|--:|--:|:--|:--|
+| tiny (<64 B) | +30.23% | −113.00% | 1/1/0 | 0/2/0 |
+| small (64 B–4 KB) | +82.30% | −322.20% | 6/0/0 | 0/6/0 |
+| mid (4–64 KB) | +83.67% | −328.91% | 2/0/0 | 0/2/0 |
+| big (64 KB–1 MB) | +83.88% | −184.12% | 2/0/0 | 0/2/0 |
+| huge (>1 MB) | +84.06% | −140.44% | 1/0/0 | 0/1/0 |
+
+### Codegen across the three targets
+
+**Identical on all three**: 30 instructions, 16 distinct mnemonics, **97 bytes**
+each; all three diffs are empty. The hot loop is `mov (%rsi,%rcx,1),%rcx` +
+`mov %rcx,(%rax,%rdi,1)` — MOV only, **zero `call` instructions**. As predicted:
+with no vectorisation there is nothing for `-march` to choose between, so the
+tuning target is irrelevant to this rung. Files:
+`results/codegen_diff_word_znver2_vs_znver3.diff`, `..._znver2_vs_v3.diff`,
+`..._znver3_vs_v3.diff`.
+
+### Rule 2 outcome
+
+38 of 39 keys stable (last-two-window change +0.0000%); floors reached at windows
+1–8. One key **UNSTABLE**: znver2 at 256 KB, which moved −1.044% at window 9 —
+no claim is made at that size. Notably the word rung's floors arrive much earlier
+than rung 1's (usually w1–w2 vs w1–w7): a 4x longer per-call copy averages the
+interference better inside each rep.
+
 ## Kernel 1 re-evaluated under the approved min_of_mins protocol (supersedes the median numbers below)
 
 9 windows x 5 reps, pinned `taskset -c 2`, 13 sizes, 0 migrated reps. Full report:
