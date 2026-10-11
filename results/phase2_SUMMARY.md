@@ -215,6 +215,49 @@ amortised to 0.039 ns/call at batch=1024 and 40 ns/call at batch=1 (0.15% at
 64 KB, 0.008% at 1 MB). So harness overhead is **not** the source of the spread:
 the null kernel, which touches no memory, still varies 20% run-to-run.
 
+**Step 3b — `/proc/loadavg` and `/proc/stat` before *and after* each run, with the
+delta consumed *during* the window** (the explicitly requested before/after
+form; rep count 20, 4 KB, unpinned):
+
+| run | clock | window | loadavg before→after | other CPU ticks in-window agg / cpu2 (100/s) | steal | med-of-medians | spread | min-of-mins |
+|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 20:55:55 | 2.92 s | 1.75→1.69 | **480 / 78** | 0 | 2571.75 ns | 20.0% | 1293.69 ns |
+| 2 | 20:56:58 | 1.95 s | 1.74→1.74 | **318 / 31** | 0 | 2413.31 ns | 35.0% | 1292.44 ns |
+| 3 | 20:58:00 | 2.98 s | 1.39→1.52 | **485 / 156** | 0 | 2157.19 ns | 33.6% | 1791.50 ns |
+
+480 and 485 ticks in a ~3 s window is 4.8 s of CPU time consumed by *other*
+processes on a 4-vCPU guest — about 1.6 vCPUs busy for the whole measurement while
+our own loadavg contribution is ~0. So the loadavg of 1.5–1.7 is not a stale
+average: foreign work is genuinely running throughout. `steal` stays **0**, which
+is why the guest accounting cannot see it.
+
+**Pinning test (performance-jō rule 2).** The harness reports
+`affinity covers 4 cpu(s), running on cpu N -> use taskset -c N`, so steps 1–4
+above ran *unpinned*; this closes that gap. Same command, 4 KB, 20 runs/window,
+three windows back-to-back:
+
+| config | median spread per window | min spread per window | min-of-mins |
+|--|--|--|--|
+| `taskset -c 2` (pinned) | 31.9% / 18.2% / 31.3% | 35.0% / 35.3% / 37.4% | 1292.44 / 1292.44 / 1291.81 ns |
+| unpinned | 35.7% / 31.3% / 20.9% | 28.4% / 18.5% / 41.7% | 1293.06 / 1620.56 / 1292.44 ns |
+
+**Pinning does not reduce the noise** — the two distributions are the same.
+Migration is therefore ruled out as the cause, and the interference is imposed
+on the vCPU from the host regardless of which vCPU we occupy. The CSV confirms
+the rule-2 requirement is met where it can be: `taskset -c 2 ./bench_bench_znver2
+--one ...` emits `cpu=2, migrated=0`, i.e. `sched_getcpu()` is read inside the
+measured region.
+
+**What *is* reproducible: the floor.** `min_of_mins_ns` landed at 1291.81–1293.06
+ns in **6 of the 9 windows** above and in 3 more windows of step 3 (0.1% apart)
+— while medians over the same windows moved 20–43%. The true minimum is a
+stable, reproducible property of this box; the medians are contaminated.
+
+*Caveat on `--one`/`--pmu`:* they emit a single non-replicated row (`reps=1`,
+`rep_spread_pct=0.000`), so they satisfy neither the 3-rep rule nor rule 3. Only
+the sweep mode aggregates interleaved reps. Use `--one` for the counter set,
+never for a timing claim.
+
 **Null-comparison band, current binary, reps=9.** Ratios of two provably
 identical kernels; anything smaller than these is an artefact.
 
