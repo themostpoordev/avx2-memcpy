@@ -37,7 +37,7 @@ TARGETS := znver2 znver3 v3
 # Kernels whose loops MUST stay scalar. clang -O3 -march=znver2 turns a byte
 # loop into a 4x32B vmovups loop otherwise, which would make a "naive" baseline
 # silently be an AVX2 kernel and make every comparison meaningless.
-SCALAR_SRCS  := src/ref_scalar.c
+SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c
 SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 
 # Any new src/*.c kernel is picked up automatically (no Makefile edit per kernel).
@@ -86,20 +86,18 @@ objdump: $(BINS)
 # Proves, per target, whether a translation unit contains vector instructions.
 # Files listed in SCALAR_SRCS must report 0 or the build is wrong.
 audit: $(BINS)
-	@fail=0; \
+	@fail=0; SCALAR_SRCS='$(SCALAR_SRCS)'; \
 	for t in $(TARGETS); do \
 	  echo "--- target $$t"; \
 	  for o in $$(ls build/$$t/src/*.o 2>/dev/null); do \
 	    n=$$(objdump -d --no-show-raw-insn $$o | grep -cE '\bv[a-z0-9]+[[:space:]]+\(?%?[xy]mm'); \
-	    src=$${o%.o}.c; \
-	    case "$$o" in \
-	      */ref_scalar.o) mark="[must be scalar]";; \
-	      *) mark="";; \
-	    esac; \
+	    rel=$${o#build/*/}; src=$${rel%.o}.c; \
+	    must=$$(echo "$(SCALAR_SRCS)" | tr ' ' '\n' | grep -Fx "$$src" || true); \
+	    if [ -n "$$must" ]; then mark="[SCALAR_SRCS: must be scalar]"; else mark=""; fi; \
 	    printf '  %-34s vector_insns=%-4s %s\n' "$$src" "$$n" "$$mark"; \
-	    case "$$o" in \
-	      */ref_scalar.o) if [ "$$n" != "0" ]; then echo "  ERROR: $$o has vector instructions"; fail=1; fi;; \
-	    esac; \
+	    if [ -n "$$must" ] && [ "$$n" != "0" ]; then \
+	      echo "  ERROR: $$src is in SCALAR_SRCS but has $$n vector instruction line(s)"; fail=1; \
+	    fi; \
 	  done; \
 	done; \
 	exit $$fail

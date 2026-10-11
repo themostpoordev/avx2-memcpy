@@ -8,23 +8,37 @@
  * ladder: naive -> word -> sse2 -> avx2 -> avx2_nt -> asm -> rep_movsb, and the
  * matching memset ladder.
  */
+/* _GNU_SOURCE must be defined before the FIRST system header in this TU:
+ * harness.h needs CLOCK_MONOTONIC_RAW, and a system header included before
+ * harness.h would lock the feature set in place. Keep this at the very top. */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <string.h>                 /* the `glibc` baseline entry below */
+
 #include "harness.h"
 #include "common.h"
 
 const impl_t g_impls[] = {
     { "ref_scalar", memcpy_ref, memset_ref,
-      "byte-at-a-time golden reference; not a performance kernel" },
+      "byte-at-a-time golden reference; independent of every kernel" },
 
-    /* ---- Phase 3 additions go here, one row per kernel -------------------
+    { "glibc", memcpy, memset,
+      "glibc 2.44 ifunc-resolved baseline (the thing we are trying to beat)" },
 
-    { "naive",    memcpy_naive,    memset_naive,    "byte loop" },
-    { "word",     memcpy_word,     memset_word,     "8B chunks + tail" },
-    { "sse2",     memcpy_sse2,     memset_sse2,     "16B x4 unrolled" },
-    { "avx2",     memcpy_avx2,     memset_avx2,     "32B x4 unrolled, cached store" },
-    { "avx2_nt",  memcpy_avx2_nt,  memset_avx2_nt,  "32B x4, non-temporal, size-gated" },
-    { "nasm",     memcpy_nasm,     memset_nasm,     "hand-written clang-integrated asm" },
-    { "rep",      memcpy_rep,      memset_rep,      "rep movsb/stosb, size-gated" },
-    { "glibc",    memcpy,          memset,          "glibc 2.44 ifunc baseline" },
+    /* ---- Phase 2 ladder: one row appended per kernel, in ladder order ---- */
+    { "naive", memcpy_naive, NULL,
+      "kernel 1: byte-by-byte loop, 1B load + 1B store per byte" },
+
+    /* ---- Phase 2 rest of the ladder -------------------------------------
+    { "word",    memcpy_word,    memset_word,    "8B chunks + tail" },
+    { "sse2",    memcpy_sse2,    memset_sse2,    "16B x4 unrolled, _mm_loadu_si128" },
+    { "avx2",    memcpy_avx2,    memset_avx2,    "32B x4 unrolled, cached store" },
+    { "avx2_nt", memcpy_avx2_nt, memset_avx2_nt, "32B x4, non-temporal, threshold-gated" },
+    { "asm",     memcpy_asm,     memset_asm,     "hand-written clang-integrated asm (.S)" },
+    { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },
+    { "memset_naive", ... }  ... reported as the memset ladder (kernel 8)
     ---------------------------------------------------------------------- */
 };
 

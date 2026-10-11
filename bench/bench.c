@@ -135,6 +135,7 @@ typedef struct {
     const char *impl_filter;
     const char *mode;
     const char *arg1, *arg2, *arg3;
+    unsigned reps;        /* >= 3 per the measurement rules */
 } opts_t;
 
 static opts_t g_opt = {
@@ -142,6 +143,7 @@ static opts_t g_opt = {
     .budget_s = 1.0, .warm_budget_s = 0.5,
     .verify = 1, .quick = 0, .thp = 0, .impl_filter = NULL,
     .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL,
+    .reps = 3,
 };
 
 /* ------------------------------------------------------------------ timing */
@@ -267,6 +269,7 @@ typedef struct {
     double med_ns, min_ns, p99_ns, gbps, gbps_wall, cpb, tsc_cpb;
     unsigned batch, iters;
     uint64_t cycles, tsc_ticks;
+    int cpu_a, cpu_b, migrated;   /* sched_getcpu() sampled INSIDE the PMU window */
 } res_t;
 
 static unsigned pick_batch(size_t n)
@@ -317,6 +320,7 @@ static void run_case(const impl_t *im, int op, void *dst, const void *src,
         fprintf(stderr, "harness: PMU unavailable, cycles/byte will be -1\n");
 
     pmu_start(&p);
+    out->cpu_a = sched_getcpu();          /* pinning proof: sampled inside the region */
     uint64_t tsc0 = rdtsc_now();
     double   n0   = ns_now();
 
@@ -338,6 +342,8 @@ static void run_case(const impl_t *im, int op, void *dst, const void *src,
 
     double   n1   = ns_now();
     uint64_t tsc1 = rdtsc_now();
+    out->cpu_b = sched_getcpu();          /* still inside the PMU window */
+    out->migrated = (out->cpu_a != out->cpu_b);
     pmu_stop(&p);
 
     out->cycles    = pmu_delta(&p, "cycles");
@@ -345,10 +351,15 @@ static void run_case(const impl_t *im, int op, void *dst, const void *src,
     pmu_report_multiplex(&p, "harness");
     pmu_close(&p);
 
-    /* Keep the destination alive without taxing the timed region. */
-    g_sink ^= ((volatile unsigned char *)dst)[0];
-    g_sink ^= ((const volatile unsigned char *)src)[0];
-    g_sink ^= ((volatile unsigned char *)dst)[n - 1];
+    /* Keep the destination alive without taxing the timed region. n == 0 is
+     * legal for memcpy/memset, so never index the buffers in that case. */
+    if (n) {
+        g_sink ^= ((volatile unsigned char *)dst)[0];
+        g_sink ^= ((const volatile unsigned char *)src)[0];
+        g_sink ^= ((volatile unsigned char *)dst)[n - 1];
+    } else {
+        g_sink ^= (uint64_t)(uintptr_t)dst;
+    }
 
     if (iters == 0) iters = 1;
     qsort(samples, iters, sizeof samples[0], cmp_double);
@@ -370,69 +381,266 @@ static void run_case(const impl_t *im, int op, void *dst, const void *src,
     out->tsc_cpb   = (double)out->tsc_ticks / total_bytes;
 }
 
-/* ------------------------------------------------------------------ verify */
-static int verify_impl(const impl_t *im)
+/* ------------------------------------------------------------------ verify
+ * Rules implemented here:
+ *   - the reference is glibc, i.e. the thing we are trying to beat, not our
+ *     own scalar code;
+ *   - exhaustive 0..4096 bytes, because off-by-one and tail bugs live at small
+ *     and odd sizes;
+ *   - randomised src/dst offsets, because unaligned entry paths are exactly
+ *     where vector kernels break;
+ *   - canary bytes on BOTH sides of dst: a vector kernel that writes a whole
+ *     32B block past the end silently corrupts memory, and every benchmark
+ *     after that is a lie;
+ *   - ref_scalar is crossed against glibc first, so a harness bug cannot be
+ *     mistaken for a kernel bug.
+ */
+#define VMAXN    4096u
+#define VCAN     64u
+#define VCAN_BYTE 0xA7u
+
+static unsigned char vsrc[VMAXN + 2 * VCAN + 128] ALIGNED(64);
+static unsigned char vdst[VMAXN + 2 * VCAN + 128] ALIGNED(64);
+static unsigned char vexp[VMAXN + 2 * VCAN + 128] ALIGNED(64);
+static unsigned char vref[VMAXN + 2 * VCAN + 128] ALIGNED(64);
+
+static uint64_t g_rng = 0x9E3779B97F4A7C15ull;   /* fixed seed: reproducible */
+
+static size_t rng_offset(void)
 {
-    int bad = 0;
-    for (size_t si = 0; si < (g_opt.quick ? sizeof g_sizes_quick / sizeof g_sizes_quick[0]
-                                          : sizeof g_sizes / sizeof g_sizes[0]); si++) {
-        size_t n = g_opt.quick ? g_sizes_quick[si] : g_sizes[si];
-        if (n > g_max_size) continue;
+    uint64_t x = g_rng;
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    g_rng = x;
+    return (size_t)((x * 0x2545F4914F6CDD1Dull) & 63u);
+}
 
-        unsigned char *s = g_src, *d = g_dst, *r = g_ref;
+static int fail(const impl_t *im, int op, size_t n, size_t so, size_t dof,
+                const char *what, size_t at, unsigned char exp,
+                unsigned char got)
+{
+    fprintf(stderr, "VERIFY FAIL %s %s n=%zu src_off=%zu dst_off=%zu %s at=%zu "
+                    "exp=%02x got=%02x\n",
+            im->name, op ? "memset" : "memcpy", n, so, dof, what, at, exp, got);
+    return 1;
+}
 
-        if (im->copy) {
-            for (size_t i = 0; i < n; i++)                    /* pattern */
-                s[i] = (unsigned char)(i * 7u + 13u);
-            memcpy_ref(r, s, n);
-            memset(d, 0xCC, n);
-            im->copy(d, s, n);
-            for (size_t i = 0; i < n; i++) {
-                if (r[i] != d[i]) {
-                    fprintf(stderr, "VERIFY FAIL %s memcpy n=%zu first_diff=%zu "
-                                    "exp=%02x got=%02x\n",
-                            im->name, n, i, r[i], d[i]);
-                    bad = 1;
-                    break;
-                }
+/* Canary regions: [d-VCAN, d) and [d+n, d+n+VCAN). */
+static int canary_check(const impl_t *im, int op, size_t n, size_t so, size_t dof,
+                        const unsigned char *d)
+{
+    for (size_t i = 1; i <= VCAN; i++) {
+        if (d[-(ptrdiff_t)i] != VCAN_BYTE)
+            return fail(im, op, n, so, dof, "UNDERWRITE", i,
+                        VCAN_BYTE, d[-(ptrdiff_t)i]);
+        if (d[n + i - 1] != VCAN_BYTE)
+            return fail(im, op, n, so, dof, "OVERWRITE", n + i - 1,
+                        VCAN_BYTE, d[n + i - 1]);
+    }
+    return 0;
+}
+
+static int verify_small(const impl_t *im)
+{
+    for (size_t n = 0; n <= VMAXN; n++) {
+        for (int t = 0; t < 3; t++) {
+            size_t so = rng_offset(), dof = rng_offset();
+            unsigned char *s = vsrc + VCAN + so;
+            unsigned char *d = vdst + VCAN + dof;
+            for (size_t i = 0; i < n; i++)
+                s[i] = (unsigned char)((n * 31u + i * 7u + 13u) & 0xffu);
+
+            if (im->copy) {
+                memcpy(vexp, s, n);         /* glibc expectation */
+                memcpy_ref(vref, s, n);     /* independent golden model */
+                if (n && memcmp(vref, vexp, n))
+                    return fail(im, 0, n, so, dof, "HARNESS-BUG(glibc!=ref)",
+                                0, vexp[0], vref[0]);
+                memset(d - VCAN, VCAN_BYTE, VCAN);
+                memset(d + n, VCAN_BYTE, VCAN);
+                memset(d, 0xEE, n);
+                im->copy(d, s, n);
+                for (size_t i = 0; i < n; i++)
+                    if (d[i] != vexp[i])
+                        return fail(im, 0, n, so, dof, "BYTE", i, vexp[i], d[i]);
+                if (canary_check(im, 0, n, so, dof, d)) return 1;
             }
-        }
-        if (im->set) {
-            int val = 0x5A;
-            memset_ref(r, val, n);
-            memset(d, 0x00, n);
-            im->set(d, val, n);
-            for (size_t i = 0; i < n; i++) {
-                if (r[i] != d[i]) {
-                    fprintf(stderr, "VERIFY FAIL %s memset n=%zu first_diff=%zu "
-                                    "exp=%02x got=%02x\n",
-                            im->name, n, i, r[i], d[i]);
-                    bad = 1;
-                    break;
-                }
+            if (im->set) {
+                int val = 0x5A;
+                memset(vexp, 0, n);
+                memset(vexp, val, n);        /* glibc expectation */
+                memset_ref(vref, val, n);
+                if (n && memcmp(vref, vexp, n))
+                    return fail(im, 1, n, so, dof, "HARNESS-BUG(glibc!=ref)",
+                                0, vexp[0], vref[0]);
+                memset(d - VCAN, VCAN_BYTE, VCAN);
+                memset(d + n, VCAN_BYTE, VCAN);
+                memset(d, 0x00, n);
+                im->set(d, val, n);
+                for (size_t i = 0; i < n; i++)
+                    if (d[i] != vexp[i])
+                        return fail(im, 1, n, so, dof, "BYTE", i, vexp[i], d[i]);
+                if (canary_check(im, 1, n, so, dof, d)) return 1;
             }
         }
     }
+    return 0;
+}
+
+static int verify_large(const impl_t *im)
+{
+    const size_t *sizes = g_opt.quick ? g_sizes_quick : g_sizes;
+    size_t nsizes = g_opt.quick ? sizeof g_sizes_quick / sizeof g_sizes_quick[0]
+                                : sizeof g_sizes / sizeof g_sizes[0];
+    for (size_t si = 0; si < nsizes; si++) {
+        size_t n = sizes[si];
+        if (n > g_max_size) continue;
+        /* Keep 64B of slack on both sides of dst for the canary when the
+         * allocation allows it; otherwise fall back to a plain compare. */
+        int use_canary = (n + 2 * VCAN + 64 <= g_max_size);
+        size_t so = rng_offset(), dof = rng_offset();
+        unsigned char *s = use_canary ? g_src + VCAN + so : g_src;
+        unsigned char *d = use_canary ? g_dst + VCAN + dof : g_dst;
+        unsigned char *e = g_ref;
+        for (size_t i = 0; i < n; i++)
+            s[i] = (unsigned char)((i * 7u + 13u) & 0xffu);
+
+        if (im->copy) {
+            memcpy(e, s, n);
+            memset(d, 0xEE, n);
+            if (use_canary) {
+                memset(d - VCAN, VCAN_BYTE, VCAN);
+                memset(d + n, VCAN_BYTE, VCAN);
+            }
+            im->copy(d, s, n);
+            for (size_t i = 0; i < n; i++)
+                if (d[i] != e[i])
+                    return fail(im, 0, n, so, dof, "BYTE", i, e[i], d[i]);
+            if (use_canary && canary_check(im, 0, n, so, dof, d)) return 1;
+        }
+        if (im->set) {
+            int val = 0x5A;
+            memset(e, val, n);
+            memset(d, 0x00, n);
+            if (use_canary) {
+                memset(d - VCAN, VCAN_BYTE, VCAN);
+                memset(d + n, VCAN_BYTE, VCAN);
+            }
+            im->set(d, val, n);
+            for (size_t i = 0; i < n; i++)
+                if (d[i] != e[i])
+                    return fail(im, 1, n, so, dof, "BYTE", i, e[i], d[i]);
+            if (use_canary && canary_check(im, 1, n, so, dof, d)) return 1;
+        }
+    }
+    return 0;
+}
+
+static int verify_impl(const impl_t *im)
+{
+    int bad = verify_small(im);
+    if (bad) return bad;
+    bad = verify_large(im);
     if (!bad)
-        fprintf(stderr, "verify: %s OK\n", im->name);
+        fprintf(stderr, "verify: %s OK (glibc reference, n=0..%u random offsets,"
+                        " canary %uB both sides, plus size list)\n",
+                im->name, VMAXN, VCAN);
     return bad;
 }
+
+/* ---- rep aggregation -----------------------------------------------------
+ * Rule: >= 3 repetitions per measurement, median across reps, and a > 5%
+ * spread on the median must be flagged (and never dressed up).
+ */
+#define MAX_REPS 32
+
+typedef struct {
+    double med_ns, min_ns, p99_ns, gbps, gbps_wall, cpb, tsc_cpb, spread_pct;
+    unsigned batch, iters, reps;
+    uint64_t cycles;
+    int cpu, migrated, flagged;
+} agg_t;
 
 /* ------------------------------------------------------------------ output */
 static void csv_header(void)
 {
-    printf("impl,target,op,size_bytes,batch,iters,median_ns,min_ns,p99_ns,"
-           "gbps,gbps_wall,cycles_per_byte,tsc_ticks_per_byte,tsc_ghz,core_ghz,"
-           "cycles_total\n");
+    printf("impl,target,op,size_bytes,batch,iters,reps,median_ns,min_ns,p99_ns,"
+           "gbps,gbps_wall,cycles_per_byte,tsc_ticks_per_byte,rep_spread_pct,"
+           "flag,cpu,migrated,tsc_ghz,core_ghz,cycles_total\n");
 }
 
-static void csv_row(const impl_t *im, const char *op, size_t n, const res_t *r)
+static void csv_row(const impl_t *im, const char *op, size_t n, const agg_t *a)
 {
-    printf("%s,%s,%s,%zu,%u,%u,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.5f,%.5f,%llu\n",
-           im->name, TARGET_NAME, op, n, r->batch, r->iters,
-           r->med_ns, r->min_ns, r->p99_ns, r->gbps, r->gbps_wall,
-           r->cpb, r->tsc_cpb, g_tsc_ghz, g_core_ghz,
-           (unsigned long long)r->cycles);
+    printf("%s,%s,%s,%zu,%u,%u,%u,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d,%d,%.5f,%.5f,%llu\n",
+           im->name, TARGET_NAME, op, n, a->batch, a->iters, a->reps,
+           a->med_ns, a->min_ns, a->p99_ns, a->gbps, a->gbps_wall,
+           a->cpb, a->tsc_cpb, a->spread_pct, a->flagged, a->cpu, a->migrated,
+           g_tsc_ghz, g_core_ghz, (unsigned long long)a->cycles);
+}
+
+static double med_d(double *v, unsigned n)
+{
+    if (!n) return 0.0;
+    qsort(v, n, sizeof v[0], cmp_double);
+    return v[n / 2];
+}
+
+static int cmp_u64v(const void *a, const void *b)
+{
+    uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
+    return (x > y) - (x < y);
+}
+
+static void measure_reps(const impl_t *im, int op, size_t n, agg_t *o)
+{
+    double meds[MAX_REPS], gbps[MAX_REPS], cpbs[MAX_REPS], tscs[MAX_REPS];
+    double p99s[MAX_REPS], walls[MAX_REPS];
+    uint64_t cycs[MAX_REPS];
+    unsigned reps = g_opt.reps ? g_opt.reps : 1;
+    unsigned iters = 0, batch = 0;
+    double mins = 0.0;
+    int cpu = -1, migrated = 0;
+
+    memset(o, 0, sizeof *o);
+    if (reps > MAX_REPS) reps = MAX_REPS;
+
+    for (unsigned r = 0; r < reps; r++) {
+        res_t res;
+        run_case(im, op, g_dst, g_src, n, &res);
+        if (res.batch == 0) { o->batch = 0; return; }   /* impl lacks this op */
+        meds[r] = res.med_ns;
+        gbps[r] = res.gbps;
+        cpbs[r] = res.cpb;
+        tscs[r] = res.tsc_cpb;
+        p99s[r] = res.p99_ns;
+        walls[r] = res.gbps_wall;
+        cycs[r] = res.cycles;
+        if (r == 0 || res.min_ns < mins) mins = res.min_ns;
+        if (res.iters > iters) iters = res.iters;
+        batch = res.batch;
+        cpu = res.cpu_b;
+        if (res.migrated) migrated = 1;
+    }
+
+    o->reps = reps;
+    o->iters = iters;
+    o->batch = batch;
+    o->min_ns = mins;
+    o->med_ns = med_d(meds, reps);
+    o->p99_ns = med_d(p99s, reps);
+    o->cpb = med_d(cpbs, reps);
+    o->tsc_cpb = med_d(tscs, reps);
+    o->gbps_wall = med_d(walls, reps);
+    o->gbps = med_d(gbps, reps);
+    qsort(cycs, reps, sizeof cycs[0], cmp_u64v);
+    o->cycles = cycs[reps / 2];
+    /* gbps[] is sorted now (median call sorted it) */
+    o->spread_pct = o->gbps > 0.0
+                  ? 100.0 * (gbps[reps - 1] - gbps[0]) / o->gbps : 0.0;
+    o->cpu = cpu;
+    o->migrated = migrated;
+    o->flagged = (o->spread_pct > 5.0);
 }
 
 static int want_impl(const impl_t *im)
@@ -471,25 +679,43 @@ static int mode_all(void)
             g_timer_overhead_ns, g_max_size >> 20);
 
     csv_header();
+    unsigned nflagged = 0, nmigrated = 0, nrows = 0;
     for (size_t ii = 0; ii < g_impl_count; ii++) {
         const impl_t *im = &g_impls[ii];
         if (!want_impl(im))
             continue;
         if (g_opt.verify && verify_impl(im))
-            return 1;
+            return 1;                       /* no benchmarking of broken code */
         for (int op = 0; op < 2; op++) {
             if (op == 0 && !im->copy) continue;
             if (op == 1 && !im->set)  continue;
             for (size_t si = 0; si < nsizes; si++) {
                 size_t n = sizes[si];
                 if (n > g_max_size) continue;
-                res_t r;
-                run_case(im, op, g_dst, g_src, n, &r);
-                csv_row(im, op_name(op), n, &r);
+                agg_t a;
+                measure_reps(im, op, n, &a);
+                if (a.batch == 0) continue;
+                csv_row(im, op_name(op), n, &a);
+                nrows++;
+                if (a.flagged) {
+                    nflagged++;
+                    fprintf(stderr, "VARIANCE FLAG %s %s n=%zu reps=%u "
+                                    "spread=%.2f%% on median gbps=%.4f "
+                                    "(>5%% -> remeasure or treat as noisy)\n",
+                            im->name, op_name(op), n, a.reps, a.spread_pct,
+                            a.gbps);
+                }
+                if (a.migrated) {
+                    nmigrated++;
+                    fprintf(stderr, "MIGRATION %s %s n=%zu cpu %d -> %d\n",
+                            im->name, op_name(op), n, a.cpu, a.cpu);
+                }
                 fflush(stdout);
             }
         }
     }
+    fprintf(stderr, "harness: %u rows, %u variance-flagged, %u migrated\n",
+            nrows, nflagged, nmigrated);
     return 0;
 }
 
@@ -507,10 +733,15 @@ static int mode_one(int full_pmu)
     }
 
     if (!full_pmu) {
-        res_t r;
-        run_case(im, op, g_dst, g_src, n, &r);
+        /* --one is the single-shot form used by scripts/run_perf.sh; keep it to
+         * one rep so the caller's runtime stays predictable. */
+        unsigned saved = g_opt.reps;
+        g_opt.reps = 1;
+        agg_t a;
+        measure_reps(im, op, n, &a);
+        g_opt.reps = saved;
         csv_header();
-        csv_row(im, op_name(op), n, &r);
+        csv_row(im, op_name(op), n, &a);
         return 0;
     }
 
@@ -652,8 +883,8 @@ static void usage(void)
         "  --calib                       clock-domain calibration only\n"
         "  --verify                      correctness pass only\n"
         "  --list                        list implementations\n"
-        "options: --quick --iters N --warmup N --budget SEC --thp --no-verify\n"
-        "         --impl NAME\n");
+        "options: --quick --iters N --warmup N --budget SEC --reps N (>=3) --thp\n"
+        "         --no-verify --impl NAME\n");
 }
 
 int main(int argc, char **argv)
@@ -667,6 +898,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--thp"))   g_opt.thp = 1;
         else if (!strcmp(a, "--no-verify")) g_opt.verify = 0;
         else if (!strcmp(a, "--iters") && i + 1 < argc)   g_opt.iters_max = (size_t)atoi(argv[++i]);
+        else if (!strcmp(a, "--reps") && i + 1 < argc)    g_opt.reps = (unsigned)atoi(argv[++i]);
         else if (!strcmp(a, "--warmup") && i + 1 < argc)  g_opt.warmup_max = (size_t)atoi(argv[++i]);
         else if (!strcmp(a, "--budget") && i + 1 < argc)  g_opt.budget_s = atof(argv[++i]);
         else if (!strcmp(a, "--impl") && i + 1 < argc)    g_opt.impl_filter = argv[++i];
