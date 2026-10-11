@@ -120,7 +120,7 @@ audit: $(BINS)
 # tracked. A snapshot that already exists is FROZEN: this target refuses to
 # overwrite one that differs from the current run, because a record that
 # silently changes is not a record. Same data re-copied is a no-op.
-SNAPSHOT_IMPLS := ref_scalar naive word
+SNAPSHOT_IMPLS := ref_scalar naive word sse2
 # NOTE on the quoting below - both of these were bugs in the first version:
 #   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
 #     `impl_` (underscore is an identifier character) followed by `$t`, so every
@@ -129,6 +129,15 @@ SNAPSHOT_IMPLS := ref_scalar naive word
 #     consumed by make, not by the shell, so `$n` expanded to empty and the
 #     arithmetic was eaten as a make variable reference.
 snapshot: $(BINS)
+	@for f in results/phase2_*.csv; do \
+	  [ -f "$$f" ] || continue; \
+	  case "$$f" in *.median_based.csv) continue ;; esac; \
+	  impl=$$(printf '%s' "$$f" | sed -E 's|^results/phase2_||; s|_(znver2|znver3|v3)[.]csv$$||'); \
+	  case " $(SNAPSHOT_IMPLS) " in \
+	    *" $$impl "*) ;; \
+	    *) echo "  WARNING: $$f not in SNAPSHOT_IMPLS ($$impl); NOT snapshotted" ;; \
+	  esac; \
+	done
 	@mkdir -p results/committed; n=0; refused=0; \
 	for impl in $(SNAPSHOT_IMPLS); do \
 	  for t in $(TARGETS); do \
