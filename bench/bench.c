@@ -139,6 +139,12 @@ typedef struct {
     int dump_reps;        /* print every rep of every case to stderr */
     char   impl_buf[256]; /* accumulated --impl list; repeats append */
     size_t impl_buf_len;
+    /* --sizes: the protocol measures an explicit size set, because the full
+     * list runs to 256 MiB and a scalar 256 MiB copy is ~0.75 s per call, which
+     * makes multi-window repetition of the whole list impractical. */
+#define MAX_SIZES 32
+    size_t sizes[MAX_SIZES];
+    size_t nsizes;
 } opts_t;
 
 static opts_t g_opt = {
@@ -148,6 +154,7 @@ static opts_t g_opt = {
     .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL, .arg4 = NULL,
     .reps = 5,        /* >= 3 required; 5 chosen to damp the noise measured in Phase 2 */
     .dump_reps = 0, .impl_buf = { 0 }, .impl_buf_len = 0,
+    .nsizes = 0,
 };
 
 /* Repeating --impl appends rather than overwriting.
@@ -739,6 +746,10 @@ static int mode_all(void)
     const size_t *sizes = g_opt.quick ? g_sizes_quick : g_sizes;
     size_t nsizes = g_opt.quick ? sizeof g_sizes_quick / sizeof g_sizes_quick[0]
                                 : sizeof g_sizes / sizeof g_sizes[0];
+    /* --sizes narrows the TIMED sweep only. verify_large() deliberately keeps
+     * its own full size list: a narrowed timing set must never narrow the
+     * correctness net. */
+    if (g_opt.nsizes) { sizes = g_opt.sizes; nsizes = g_opt.nsizes; }
 
     fprintf(stderr, "harness: target=%s clock: tsc=%.5f GHz core=%.5f GHz "
                     "(ratio %.4f) timer_overhead=%.2f ns max_size=%zu MiB\n",
@@ -796,11 +807,12 @@ static int mode_all(void)
                 const res_t *x = &rr[c * reps + r];
                 if (x->batch == 0) continue;
                 fprintf(stderr, "REPS %s %s n=%zu rep=%u med_ns=%.4f min_ns=%.4f "
-                                "p99_ns=%.4f cycles=%llu cpb=%.4f batch=%u iters=%u\n",
+                                "p99_ns=%.4f cycles=%llu cpb=%.4f batch=%u iters=%u "
+                                "cpu=%d migrated=%d\n",
                         cases[c].im->name, op_name(cases[c].op), cases[c].n,
                         r, x->med_ns, x->min_ns, x->p99_ns,
                         (unsigned long long)x->cycles, x->cpb, x->batch,
-                        x->iters);
+                        x->iters, x->cpu_b, x->migrated);
             }
     }
 
@@ -1063,7 +1075,8 @@ static void usage(void)
         "  --verify                      correctness pass only\n"
         "  --list                        list implementations\n"
         "options: --quick --iters N --warmup N --budget SEC --reps N (>=3) --thp\n"
-        "         --no-verify --impl NAME   (repeatable, or comma-separated list)\n");
+        "         --no-verify --impl NAME   (repeatable, or comma-separated list)\n"
+        "         --sizes A,B,C             explicit size set (default: full list)\n");
 }
 
 int main(int argc, char **argv)
@@ -1081,6 +1094,21 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--warmup") && i + 1 < argc)  g_opt.warmup_max = (size_t)atoi(argv[++i]);
         else if (!strcmp(a, "--budget") && i + 1 < argc)  g_opt.budget_s = atof(argv[++i]);
         else if (!strcmp(a, "--impl") && i + 1 < argc) append_impl_list(argv[++i]);
+        else if (!strcmp(a, "--sizes") && i + 1 < argc) {
+            const char *p = argv[++i];
+            while (*p && g_opt.nsizes < MAX_SIZES) {
+                char *end = NULL;
+                unsigned long long v = strtoull(p, &end, 0);
+                if (end == p) break;
+                g_opt.sizes[g_opt.nsizes++] = (size_t)v;
+                p = (*end == ',') ? end + 1 : end;
+            }
+            if (g_opt.nsizes == 0) {
+                fprintf(stderr, "harness: --sizes needs a comma list, e.g."
+                                " --sizes 16,64,4096\n");
+                return 2;
+            }
+        }
         else if (!strcmp(a, "--dump-reps")) g_opt.dump_reps = 1;
         else if (a[0] == '-' && a[1] == '-')              g_opt.mode = a;
         else if (npos < 4)                                pos[npos++] = a;
