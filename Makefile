@@ -132,7 +132,7 @@ snapshot: $(BINS)
 	@for f in results/phase2_*.csv; do \
 	  [ -f "$$f" ] || continue; \
 	  case "$$f" in *.median_based.csv) continue ;; esac; \
-	  impl=$$(printf '%s' "$$f" | sed -E 's|^results/phase2_||; s|_(znver2|znver3|v3)[.]csv$$||'); \
+	  impl=$$(basename "$$f" .csv | cut -d_ -f2); \
 	  case " $(SNAPSHOT_IMPLS) " in \
 	    *" $$impl "*) ;; \
 	    *) echo "  WARNING: $$f not in SNAPSHOT_IMPLS ($$impl); NOT snapshotted" ;; \
