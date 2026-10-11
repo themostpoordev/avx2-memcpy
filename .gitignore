@@ -1,0 +1,27 @@
+# ---- build artefacts ----
+*.o
+*.a
+build/
+bench/bench
+bench/bench_*
+bench_bench_*
+
+# ---- measurement outputs (evidence stays on disk, not in history) ----
+results/*.csv
+results/*.log
+results/*.svg
+*.tmp
+
+# ---- .recon probe binaries (the .c probe sources ARE committed) ----
+.recon/*.o
+.recon/uarch
+.recon/uarch2
+.recon/perf_probe
+.recon/perf_verify
+.recon/perf_raw
+.recon/perf_raw2
+.recon/whichcpy2
+
+# ---- belt and braces: only sources may be tracked from .recon/ ----
+.recon/*
+!.recon/*.c
