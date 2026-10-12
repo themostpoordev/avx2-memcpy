@@ -51,8 +51,14 @@ command -v taskset >/dev/null 2>&1 || {
 
 mkdir -p "$(dirname "$LOG")"
 : > "$LOG"
-printf '# mo_measure target=%s impls=%s op=%s sizes=%s reps=%s pin=cpu%s maxwin=%s minwin=%s stable=%s%%\n' \
-    "$TARGET" "$IMPLS" "$OP" "$SIZES" "$REPS" "$PIN" "$MAXWIN" "$MINWIN" "$STABLE_PCT" >> "$LOG"
+# The window settings are part of the measurement, not decoration: H5
+# (results/h4_diagnostics.md) showed that the per-window spread is dominated by
+# how long the timed window is, and Kernel 4's first campaign was run with the
+# default 100-sample cap before that was known. A log that does not record
+# iters/budget cannot be audited afterwards, so it is recorded here.
+printf '# mo_measure target=%s impls=%s op=%s sizes=%s reps=%s pin=cpu%s maxwin=%s minwin=%s stable=%s%% iters=%s budget=%s warmup=%s run_to_cap=%s\n' \
+    "$TARGET" "$IMPLS" "$OP" "$SIZES" "$REPS" "$PIN" "$MAXWIN" "$MINWIN" "$STABLE_PCT" \
+    "$ITERS" "$BUDGET" "$WARMUP" "$RUN_TO_CAP" >> "$LOG"
 
 # Rule 2 stability: min_of_mins is the smallest min_ns over ALL reps in ALL
 # windows, so the quantity that must stabilise is the CUMULATIVE running
