@@ -13,10 +13,21 @@
  * Shape
  *   - n >= 64: 4x32 B unrolled loop (128 B = two cache lines per iteration),
  *     then a 32 B loop, then a tail for the remaining < 32 B.
- *   - n <  64: the small-size fast path, which never enters the AVX2 loop and
- *     never uses a 32-byte access either (four 16 B accesses at most), so the
- *     ladder stays monotonic: rung 3's widest access is 16 B, rung 4's is 32 B,
- *     and every 16-byte access below 64 B is a tail, not a loop.
+ *   - n <  64: the small-size fast path, which never enters the AVX2 loop.
+ *     Correction, measured rather than intended: its effective width is NOT the
+ *     128 bits this source asks for at every size. For 32 <= n < 64 the source
+ *     writes four 16 B accesses (0, 16, n-32, n-16) and clang's SLP vectorizer
+ *     merges the two adjacent pairs into 32 B ymm accesses - the same class of
+ *     merge that made the "SSE2" rung compile to AVX at 43f01dc. Evidence in the
+ *     built object (build/<target>/src/memcpy_avx2.o): 14 ymm references, four
+ *     of them in this branch, while 16 <= n < 32 is genuinely 16 B (xmm).
+ *     Correctness is unaffected - each merged access covers [0,32) or [n-32,n),
+ *     both inside [0,n) for n >= 32, so bench.c's 64 B canaries cannot be touched
+ *     and verify passes at every n - but the monotonicity sentence that used to
+ *     stand here ("rung 3's widest access is 16 B, rung 4's is 32 B" below 64 B)
+ *     was wrong as compiled and is retired: at 32..63 B this rung IS 32 B wide.
+ *     Whether to force 128-bit there is a Kernel 5 question, because changing it
+ *     invalidates the measured Kernel 4 campaign and its frozen snapshots.
  *
  * The tail, and why it is not a byte loop
  *   The remainder after the loops is < 32 B. For 16 <= r < 32 it is copied by
