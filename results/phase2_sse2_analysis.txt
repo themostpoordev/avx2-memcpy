@@ -160,3 +160,81 @@ rule 2 evidence for sse2: cumulative min_of_mins per window (ns)
 
 wrote results/phase2_sse2_v3.csv
 
+
+
+================================================================================
+TWO-TIER RECLASSIFICATION (added per ratified MEASUREMENT_PROTOCOL.md section 3c,
+commit 6732f9b) - re-derived from the FROZEN CSVs results/committed/phase2_sse2_*.csv,
+no re-measurement. The tables above this point were produced before section 3c
+existed, so their rule3/band verdicts are the pre-ruling view.
+
+  Tier A  (per-window spread <= 10%): floor = max(1.5%, null band); band verdict authoritative
+  Tier B  (per-window spread  > 10%): floor = 25% flat; the band is NOT used, because at these
+                                       sizes it under-states the uncertainty. A delta below the
+                                       25% floor is "measured, not claimed".
+================================================================================
+
+#### znver2 (kernel 3 memcpy_sse2 vs kernel 2 memcpy_word)
+
+| size | tier | spread % | null band % | delta vs word % | floor % | tier verdict |
+|--:|:--|--:|--:|--:|--:|:--|
+| 16 | B | 18.9 | 4.56 | -4.36 | 25.00 | **measured** |
+| 32 | A | 3.4 | 1.01 | +28.63 | 1.50 | **WIN** |
+| 64 | B | 29.4 | 10.55 | +54.24 | 25.00 | **WIN** |
+| 128 | B | 23.7 | 0.00 | +67.62 | 25.00 | **WIN** |
+| 256 | B | 17.5 | 0.00 | +75.81 | 25.00 | **WIN** |
+| 512 | B | 23.7 | 0.00 | +76.23 | 25.00 | **WIN** |
+| 1024 | B | 17.9 | 0.00 | +77.09 | 25.00 | **WIN** |
+| 4096 | B | 11.8 | 0.04 | +75.58 | 25.00 | **WIN** |
+| 16384 | B | 48.9 | 0.30 | +73.35 | 25.00 | **WIN** |
+| 65536 | B | 37.5 | 1.76 | +71.24 | 25.00 | **WIN** |
+| 262144 | B | 31.8 | 5.64 | +69.09 | 25.00 | **WIN** |
+| 1048576 | A | 3.9 | 5.53 | +65.34 | 5.53 | **WIN** |
+| 4194304 | B | 21.4 | 1.21 | +60.43 | 25.00 | **WIN** |
+
+tally: Tier A=2 Tier B=11 | Tier A WIN=2 | Tier B WIN=10 | Tier B measured=1 | Tier B LOSS=0
+
+#### znver3 (kernel 3 memcpy_sse2 vs kernel 2 memcpy_word)
+
+| size | tier | spread % | null band % | delta vs word % | floor % | tier verdict |
+|--:|:--|--:|--:|--:|--:|:--|
+| 16 | B | 15.7 | 9.53 | +0.00 | 25.00 | **measured** |
+| 32 | B | 12.0 | 5.04 | -20.06 | 25.00 | **measured** |
+| 64 | B | 21.6 | 2.73 | +37.69 | 25.00 | **WIN** |
+| 128 | A | 1.6 | 2.02 | +53.98 | 2.02 | **WIN** |
+| 256 | B | 24.5 | 0.04 | +64.76 | 25.00 | **WIN** |
+| 512 | B | 22.9 | 19.78 | +66.94 | 25.00 | **WIN** |
+| 1024 | B | 17.9 | 0.00 | +71.08 | 25.00 | **WIN** |
+| 4096 | A | 9.4 | 6.22 | +68.33 | 6.22 | **WIN** |
+| 16384 | B | 48.6 | 0.33 | +69.39 | 25.00 | **WIN** |
+| 65536 | B | 38.1 | 0.48 | +64.85 | 25.00 | **WIN** |
+| 262144 | B | 31.3 | 4.43 | +62.85 | 25.00 | **WIN** |
+| 1048576 | B | 17.2 | 5.44 | +58.08 | 25.00 | **WIN** |
+| 4194304 | B | 27.6 | 1.01 | +53.41 | 25.00 | **WIN** |
+
+tally: Tier A=2 Tier B=11 | Tier A WIN=2 | Tier B WIN=9 | Tier B measured=2 | Tier B LOSS=0
+
+#### v3 (kernel 3 memcpy_sse2 vs kernel 2 memcpy_word)
+
+| size | tier | spread % | null band % | delta vs word % | floor % | tier verdict |
+|--:|:--|--:|--:|--:|--:|:--|
+| 16 | B | 23.7 | 4.56 | +3.89 | 25.00 | **measured** |
+| 32 | A | 4.4 | 2.34 | +28.85 | 2.34 | **WIN** |
+| 64 | B | 30.3 | 12.12 | +54.31 | 25.00 | **WIN** |
+| 128 | B | 26.2 | 0.04 | +69.30 | 25.00 | **WIN** |
+| 256 | B | 18.5 | 0.00 | +75.25 | 25.00 | **WIN** |
+| 512 | B | 26.2 | 0.04 | +76.37 | 25.00 | **WIN** |
+| 1024 | B | 19.6 | 0.00 | +77.27 | 25.00 | **WIN** |
+| 4096 | B | 15.8 | 19.99 | +75.73 | 25.00 | **WIN** |
+| 16384 | B | 47.9 | 2.47 | +73.50 | 25.00 | **WIN** |
+| 65536 | B | 37.1 | 0.79 | +71.38 | 25.00 | **WIN** |
+| 262144 | B | 30.6 | 5.82 | +68.84 | 25.00 | **WIN** |
+| 1048576 | B | 13.1 | 0.02 | +65.22 | 25.00 | **WIN** |
+| 4194304 | B | 37.4 | 2.61 | +62.60 | 25.00 | **WIN** |
+
+tally: Tier A=1 Tier B=12 | Tier A WIN=1 | Tier B WIN=11 | Tier B measured=1 | Tier B LOSS=0
+
+CONCLUSION: the +54-77% SSE2 gains over the word rung are CLAIMS under Tier B, not merely
+measurements - every one exceeds the flat 25% floor. 16 B is "measured" on all three
+targets (its deltas are -4.4%, +0.0%, +3.9%), and znver3 32 B is a measured -20.1%
+regression that the 25% floor does NOT promote to a LOSS claim (Tier B).
