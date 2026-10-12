@@ -70,8 +70,13 @@ same size - their windows are longer, not their memory access better.
 1. The instability is an **instrument setting, not a kernel property**, so
    Kernel 4 does not inherit it merely by being vectorised.
 2. Kernel 4 is therefore measured with the window driven by the time budget
-   rather than the iteration cap (`ITERS=4000`, `BUDGET=5 s`), and the comparison
-   above is published with it.
+   rather than the iteration cap (`ITERS=4000`, `BUDGET=0.05 s`): each case
+   samples `min(4000, what 50 ms buys)` - 50 ms at every size where 4000 samples
+   take longer than that, and 9-40 ms at the smallest sizes - against ~0.1 ms in
+   K1-K3. An earlier draft of this line said `BUDGET=5 s`; that figure was never
+   used and could not have bound, because 4000 samples finish well inside 5 s at
+   every size in this ladder, so the sample cap would have decided every window.
+   The campaign log header now records the settings, so this cannot recur.
 3. This makes claims **stricter, not looser**: with the corrected window most
    sizes become Tier A, whose floor is `max(1.5%, null band)` - much tighter than
    Tier B's flat 25%.
