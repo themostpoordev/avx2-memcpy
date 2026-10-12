@@ -61,7 +61,8 @@ ifeq ($(filter $(TARGET),$(TARGETS)),)
 $(error TARGET must be one of: $(TARGETS))
 endif
 
-.PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot
+.PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot ntprobe \
+        $(addprefix ntprobe-,$(TARGETS))
 
 all: $(BINS)
 bench: $(BINS)
@@ -129,6 +130,40 @@ audit-width: $(BINS)
 # row: both audits, in one command, with one exit status.
 gate: audit audit-width
 	@echo "gate: audit + audit-width PASSED - benchmarking permitted"
+
+# ---- Kernel 5 threshold probe (diagnostic, not a rung) ---------------------
+# Builds bench/bench_<t>_ntprobe, which is every normal object EXCEPT the
+# committed memcpy_avx2_nt.o, plus that same source compiled with its NT
+# threshold forced low. That is how the NT threshold is discovered: sweep sizes
+# with NT enabled everywhere above 64 B and find where it starts winning.
+# scripts/nt_threshold_probe.sh drives it and reads the result. The probe binary
+# is never snapshotted and never enters a claim; the committed rung is built by
+# the normal rules with the threshold the probe selected.
+NT_THRESHOLD ?= 64
+# $(FLAGS_$$t) does NOT work here: make looks up a variable literally named
+# "FLAGS_$t" and finds nothing, so the probe object was compiled without -mavx2
+# at first and clang refused the intrinsics. Expanding per target with $(1) at
+# make time is the pattern the normal rules above already use.
+# One rule per target via $(eval), the same pattern the normal target rules use.
+# Two things this cost, both worth recording: $(foreach) directly in a recipe
+# does NOT work (it joins expansions with a space, so the three clang commands
+# ran as one), and shell variables / command substitution inside a define that is
+# passed through $(eval) are expanded twice by make ("objs=..." reached the shell
+# as "bjs=..."), so the object list is computed in make with $(filter-out) and
+# $(addprefix) instead of ls|grep.
+define NTPROBE_TARGET
+ntprobe-$(1): $(BINS)
+	@$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(1)) $(INC) \
+	  -DTARGET_NAME='"$(1)"' -DMEMCPY_AVX2_NT_THRESHOLD=$(NT_THRESHOLD) \
+	  -c src/memcpy_avx2_nt.c -o build/$(1)/src/memcpy_avx2_nt_probe.o
+	@$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(1)) $(INC) \
+	  -DTARGET_NAME='"$(1)"' \
+	  $(filter-out build/$(1)/src/memcpy_avx2_nt.o,$(addprefix build/$(1)/,$(SRC_OBJ))) \
+	  build/$(1)/src/memcpy_avx2_nt_probe.o $(LDFLAGS) -o bench/bench_$(1)_ntprobe
+	@echo "built bench/bench_$(1)_ntprobe (NT threshold forced to $(NT_THRESHOLD) B)"
+endef
+$(foreach t,$(TARGETS),$(eval $(call NTPROBE_TARGET,$(t))))
+ntprobe: $(addprefix ntprobe-,$(TARGETS))
 
 # ---- committed CSV snapshots (frozen record of finalized kernels) ----------
 # results/*.csv is gitignored (rewritten every run). A kernel that has passed
