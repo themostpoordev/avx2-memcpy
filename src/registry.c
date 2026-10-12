@@ -46,9 +46,11 @@ const impl_t g_impls[] = {
     { "avx2_pf4", memcpy_avx2_pf4, NULL,
       "kernel 4 variant: identical body, prefetch distance +4 cache lines" },
 
+    { "avx2_nt", memcpy_avx2_nt, NULL,
+      "kernel 5: as kernel 4 above the NT threshold, _mm256_stream_si256 + sfence, cached below it" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
-    { "avx2_nt", memcpy_avx2_nt, memset_avx2_nt, "32B x4, non-temporal, threshold-gated" },
     { "asm",     memcpy_asm,     memset_asm,     "hand-written clang-integrated asm (.S)" },
     { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },
     { "memset_naive", ... }  ... reported as the memset ladder (kernel 8)

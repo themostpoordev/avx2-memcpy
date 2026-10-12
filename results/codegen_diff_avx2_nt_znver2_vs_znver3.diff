@@ -1,0 +1,310 @@
+# codegen diff: kernel=avx2_nt  znver2 vs znver3
+# compared: build/znver2/avx2_nt.asm  vs  build/znver3/avx2_nt.asm
+#           (function-extracted, address-stripped instruction streams from src/memcpy_avx2_nt.c)
+# znver2: instructions=197  distinct_mnemonics=24  func_bytes=761
+# znver3: instructions=257  distinct_mnemonics=30  func_bytes=1193
+# verdict: DIFFERENT — 186 changed instruction line(s); unified diff follows
+--- build/znver2/avx2_nt.asm	2026-10-12 19:07:58.087082279 +0200
++++ build/znver3/avx2_nt.asm	2026-10-12 19:07:58.173747140 +0200
+@@ -7,14 +7,14 @@
+ neg    %ecx
+ and    $0x1f,%ecx
+ cmp    $0x10,%ecx
+-jb     91 <memcpy_avx2_nt+0x91>
++jb     80 <memcpy_avx2_nt+0x80>
+ vmovups (%rsi),%xmm0
+ vmovups -0x10(%rsi,%rcx,1),%xmm1
+ vmovups %xmm0,(%rax)
+ vmovups %xmm1,-0x10(%rax,%rcx,1)
+-jmp    1cd <memcpy_avx2_nt+0x1cd>
++jmp    381 <memcpy_avx2_nt+0x381>
+ cmp    $0x20,%rdx
+-jb     72 <memcpy_avx2_nt+0x72>
++jb     65 <memcpy_avx2_nt+0x65>
+ vmovups (%rsi),%ymm0
+ vmovups -0x20(%rsi,%rdx,1),%ymm1
+ vmovups %ymm0,(%rax)
+@@ -22,101 +22,161 @@
+ vzeroupper
+ ret
+ cmp    $0x80,%rdx
+-jae    af <memcpy_avx2_nt+0xaf>
++jae    9a <memcpy_avx2_nt+0x9a>
+ xor    %ecx,%ecx
+-lea    0x20(%rcx),%rdi
+-cmp    %rdx,%rdi
+-jbe    130 <memcpy_avx2_nt+0x130>
+-jmp    10e <memcpy_avx2_nt+0x10e>
++jmp    2e4 <memcpy_avx2_nt+0x2e4>
+ cmp    $0x10,%rdx
+-jb     14f <memcpy_avx2_nt+0x14f>
++jb     c4 <memcpy_avx2_nt+0xc4>
+ vmovups (%rsi),%xmm0
+ vmovups -0x10(%rsi,%rdx,1),%xmm1
+ vmovups %xmm0,(%rax)
+ vmovups %xmm1,-0x10(%rax,%rdx,1)
+ ret
+ cmp    $0x8,%ecx
+-jb     166 <memcpy_avx2_nt+0x166>
++jb     df <memcpy_avx2_nt+0xdf>
+ mov    (%rsi),%rdi
+ mov    -0x8(%rsi,%rcx,1),%r8
+ mov    %rdi,(%rax)
+ mov    %r8,-0x8(%rax,%rcx,1)
+-jmp    1cd <memcpy_avx2_nt+0x1cd>
+-mov    $0x80,%ecx
+-data16 data16 cs nopw 0x0(%rax,%rax,1)
+-vmovups -0x80(%rsi,%rcx,1),%ymm0
+-vmovups -0x60(%rsi,%rcx,1),%ymm1
+-vmovups -0x40(%rsi,%rcx,1),%ymm2
+-vmovups -0x20(%rsi,%rcx,1),%ymm3
+-prefetcht0 (%rsi,%rcx,1)
+-prefetcht0 (%rax,%rcx,1)
+-vmovups %ymm0,-0x80(%rax,%rcx,1)
+-vmovups %ymm1,-0x60(%rax,%rcx,1)
+-vmovups %ymm2,-0x40(%rax,%rcx,1)
+-vmovups %ymm3,-0x20(%rax,%rcx,1)
+-sub    $0xffffffffffffff80,%rcx
+-cmp    %rdx,%rcx
+-jbe    c0 <memcpy_avx2_nt+0xc0>
+-add    $0xffffffffffffff80,%rcx
++jmp    381 <memcpy_avx2_nt+0x381>
++lea    -0x80(%rdx),%rcx
++mov    %rcx,%r8
++shr    $0x7,%r8
++inc    %r8
++mov    %r8d,%edi
++and    $0x3,%edi
++cmp    $0x180,%rcx
++jae    fb <memcpy_avx2_nt+0xfb>
++mov    $0x80,%r8d
++xor    %ecx,%ecx
++jmp    290 <memcpy_avx2_nt+0x290>
++cmp    $0x8,%rdx
++jb     32f <memcpy_avx2_nt+0x32f>
++mov    (%rsi),%rcx
++mov    -0x8(%rsi,%rdx,1),%rsi
++mov    %rcx,(%rax)
++mov    %rsi,-0x8(%rax,%rdx,1)
++ret
++cmp    $0x4,%ecx
++jb     342 <memcpy_avx2_nt+0x342>
++mov    (%rsi),%edi
++mov    -0x4(%rsi,%rcx,1),%r8d
++mov    %edi,(%rax)
++mov    %r8d,-0x4(%rax,%rcx,1)
++jmp    381 <memcpy_avx2_nt+0x381>
++and    $0xfffffffffffffffc,%r8
++lea    0x200(%rsi),%r9
++lea    0x200(%rax),%r10
++xor    %ecx,%ecx
++nop
++vmovups -0x200(%r9,%rcx,1),%ymm0
++vmovups -0x1e0(%r9,%rcx,1),%ymm1
++vmovups -0x1c0(%r9,%rcx,1),%ymm2
++vmovups -0x1a0(%r9,%rcx,1),%ymm3
++prefetcht0 -0x180(%r9,%rcx,1)
++prefetcht0 -0x180(%r10,%rcx,1)
++vmovups %ymm0,-0x200(%r10,%rcx,1)
++vmovups %ymm1,-0x1e0(%r10,%rcx,1)
++vmovups %ymm2,-0x1c0(%r10,%rcx,1)
++vmovups %ymm3,-0x1a0(%r10,%rcx,1)
++prefetcht0 -0x100(%r9,%rcx,1)
++prefetcht0 -0x100(%r10,%rcx,1)
++vmovups -0x180(%r9,%rcx,1),%ymm0
++vmovups -0x160(%r9,%rcx,1),%ymm1
++vmovups -0x140(%r9,%rcx,1),%ymm2
++vmovups -0x120(%r9,%rcx,1),%ymm3
++vmovups %ymm0,-0x180(%r10,%rcx,1)
++vmovups %ymm1,-0x160(%r10,%rcx,1)
++vmovups %ymm2,-0x140(%r10,%rcx,1)
++vmovups %ymm3,-0x120(%r10,%rcx,1)
++prefetcht0 -0x80(%r9,%rcx,1)
++prefetcht0 -0x80(%r10,%rcx,1)
++vmovups -0x100(%r9,%rcx,1),%ymm0
++vmovups -0xe0(%r9,%rcx,1),%ymm1
++vmovups -0xc0(%r9,%rcx,1),%ymm2
++vmovups -0xa0(%r9,%rcx,1),%ymm3
++vmovups %ymm0,-0x100(%r10,%rcx,1)
++vmovups %ymm1,-0xe0(%r10,%rcx,1)
++vmovups %ymm2,-0xc0(%r10,%rcx,1)
++vmovups %ymm3,-0xa0(%r10,%rcx,1)
++prefetcht0 (%r9,%rcx,1)
++prefetcht0 (%r10,%rcx,1)
++vmovups -0x80(%r9,%rcx,1),%ymm0
++vmovups -0x60(%r9,%rcx,1),%ymm1
++vmovups -0x40(%r9,%rcx,1),%ymm2
++vmovups -0x20(%r9,%rcx,1),%ymm3
++vmovups %ymm0,-0x80(%r10,%rcx,1)
++vmovups %ymm1,-0x60(%r10,%rcx,1)
++vmovups %ymm2,-0x40(%r10,%rcx,1)
++vmovups %ymm3,-0x20(%r10,%rcx,1)
++add    $0x200,%rcx
++add    $0xfffffffffffffffc,%r8
++jne    110 <memcpy_avx2_nt+0x110>
++test   %rdi,%rdi
++je     2e4 <memcpy_avx2_nt+0x2e4>
++lea    0x80(%rcx),%r8
++nop
++vmovups (%rsi,%rcx,1),%ymm0
++vmovups 0x20(%rsi,%rcx,1),%ymm1
++vmovups 0x40(%rsi,%rcx,1),%ymm2
++vmovups 0x60(%rsi,%rcx,1),%ymm3
++prefetcht0 0x80(%rsi,%rcx,1)
++prefetcht0 0x80(%rax,%rcx,1)
++dec    %rdi
++vmovups %ymm0,(%rax,%rcx,1)
++vmovups %ymm1,0x20(%rax,%rcx,1)
++vmovups %ymm2,0x40(%rax,%rcx,1)
++vmovups %ymm3,0x60(%rax,%rcx,1)
++mov    %r8,%rcx
++lea    0x80(%r8),%r8
++jne    290 <memcpy_avx2_nt+0x290>
++add    $0xffffffffffffff80,%r8
++mov    %r8,%rcx
+ lea    0x20(%rcx),%rdi
+ cmp    %rdx,%rdi
+-jbe    130 <memcpy_avx2_nt+0x130>
++jbe    310 <memcpy_avx2_nt+0x310>
+ mov    %rcx,%rdi
+ mov    %rdx,%rcx
+ sub    %rdi,%rcx
+ cmp    $0x10,%rcx
+-jae    244 <memcpy_avx2_nt+0x244>
+-jmp    289 <memcpy_avx2_nt+0x289>
+-cs nopw 0x0(%rax,%rax,1)
++jae    3f4 <memcpy_avx2_nt+0x3f4>
++jmp    439 <memcpy_avx2_nt+0x439>
++data16 cs nopw 0x0(%rax,%rax,1)
+ vmovups (%rsi,%rcx,1),%ymm0
+ lea    0x20(%rcx),%rdi
+ vmovups %ymm0,(%rax,%rcx,1)
+ add    $0x40,%rcx
+ cmp    %rdx,%rcx
+ mov    %rdi,%rcx
+-jbe    130 <memcpy_avx2_nt+0x130>
+-jmp    238 <memcpy_avx2_nt+0x238>
+-cmp    $0x8,%rdx
+-jb     17b <memcpy_avx2_nt+0x17b>
+-mov    (%rsi),%rcx
+-mov    -0x8(%rsi,%rdx,1),%rsi
+-mov    %rcx,(%rax)
+-mov    %rsi,-0x8(%rax,%rdx,1)
+-ret
+-cmp    $0x4,%ecx
+-jb     18e <memcpy_avx2_nt+0x18e>
+-mov    (%rsi),%edi
+-mov    -0x4(%rsi,%rcx,1),%r8d
+-mov    %edi,(%rax)
+-mov    %r8d,-0x4(%rax,%rcx,1)
+-jmp    1cd <memcpy_avx2_nt+0x1cd>
++jbe    310 <memcpy_avx2_nt+0x310>
++jmp    3e8 <memcpy_avx2_nt+0x3e8>
+ cmp    $0x4,%rdx
+-jb     1a7 <memcpy_avx2_nt+0x1a7>
++jb     35b <memcpy_avx2_nt+0x35b>
+ mov    (%rsi),%ecx
+ mov    -0x4(%rsi,%rdx,1),%esi
+ mov    %ecx,(%rax)
+ mov    %esi,-0x4(%rax,%rdx,1)
+ ret
+ cmp    $0x2,%ecx
+-jb     1c2 <memcpy_avx2_nt+0x1c2>
++jb     376 <memcpy_avx2_nt+0x376>
+ movzwl (%rsi),%edi
+ movzwl -0x2(%rsi,%rcx,1),%r8d
+ mov    %di,(%rax)
+ mov    %r8w,-0x2(%rax,%rcx,1)
+-jmp    1cd <memcpy_avx2_nt+0x1cd>
++jmp    381 <memcpy_avx2_nt+0x381>
+ cmp    $0x2,%rdx
+-jb     2ea <memcpy_avx2_nt+0x2ea>
++jb     49a <memcpy_avx2_nt+0x49a>
+ movzwl (%rsi),%ecx
+ movzwl -0x2(%rsi,%rdx,1),%esi
+ mov    %cx,(%rax)
+ mov    %si,-0x2(%rax,%rdx,1)
+ ret
+ cmp    $0x1,%ecx
+-jne    1cd <memcpy_avx2_nt+0x1cd>
++jne    381 <memcpy_avx2_nt+0x381>
+ movzbl (%rsi),%edi
+ mov    %dil,(%rax)
+ lea    0x80(%rsi),%rdi
+-data16 data16 cs nopw 0x0(%rax,%rax,1)
++nopl   0x0(%rax,%rax,1)
+ vmovups -0x80(%rdi,%rcx,1),%ymm0
+ vmovups -0x60(%rdi,%rcx,1),%ymm1
+ vmovups -0x40(%rdi,%rcx,1),%ymm2
+@@ -130,16 +190,16 @@
+ vmovntps %ymm3,0x60(%rax,%rcx,1)
+ add    $0x80,%rcx
+ cmp    %rdx,%r8
+-jbe    1e0 <memcpy_avx2_nt+0x1e0>
++jbe    390 <memcpy_avx2_nt+0x390>
+ lea    0x20(%rcx),%rdi
+ cmp    %rdx,%rdi
+-jbe    260 <memcpy_avx2_nt+0x260>
++jbe    410 <memcpy_avx2_nt+0x410>
+ mov    %rcx,%rdi
+ sfence
+ mov    %rdx,%rcx
+ sub    %rdi,%rcx
+ cmp    $0x10,%rcx
+-jb     289 <memcpy_avx2_nt+0x289>
++jb     439 <memcpy_avx2_nt+0x439>
+ vmovups (%rsi,%rdi,1),%xmm0
+ vmovups -0x10(%rsi,%rdx,1),%xmm1
+ vmovups %xmm0,(%rax,%rdi,1)
+@@ -153,14 +213,14 @@
+ add    $0x40,%rcx
+ cmp    %rdx,%rcx
+ mov    %rdi,%rcx
+-jbe    260 <memcpy_avx2_nt+0x260>
++jbe    410 <memcpy_avx2_nt+0x410>
+ sfence
+ mov    %rdx,%rcx
+ sub    %rdi,%rcx
+ cmp    $0x10,%rcx
+-jae    244 <memcpy_avx2_nt+0x244>
++jae    3f4 <memcpy_avx2_nt+0x3f4>
+ cmp    $0x8,%rcx
+-jb     2a5 <memcpy_avx2_nt+0x2a5>
++jb     455 <memcpy_avx2_nt+0x455>
+ mov    (%rsi,%rdi,1),%rcx
+ mov    -0x8(%rsi,%rdx,1),%rsi
+ mov    %rcx,(%rax,%rdi,1)
+@@ -168,7 +228,7 @@
+ vzeroupper
+ ret
+ cmp    $0x4,%rcx
+-jb     2bd <memcpy_avx2_nt+0x2bd>
++jb     46d <memcpy_avx2_nt+0x46d>
+ mov    (%rsi,%rdi,1),%ecx
+ mov    -0x4(%rsi,%rdx,1),%esi
+ mov    %ecx,(%rax,%rdi,1)
+@@ -176,7 +236,7 @@
+ vzeroupper
+ ret
+ cmp    $0x2,%rcx
+-jb     2d9 <memcpy_avx2_nt+0x2d9>
++jb     489 <memcpy_avx2_nt+0x489>
+ movzwl (%rsi,%rdi,1),%ecx
+ movzwl -0x2(%rsi,%rdx,1),%esi
+ mov    %cx,(%rax,%rdi,1)
+@@ -184,13 +244,13 @@
+ vzeroupper
+ ret
+ cmp    $0x1,%rcx
+-jne    2f5 <memcpy_avx2_nt+0x2f5>
++jne    4a5 <memcpy_avx2_nt+0x4a5>
+ movzbl (%rsi,%rdi,1),%ecx
+ mov    %cl,(%rax,%rdi,1)
+ vzeroupper
+ ret
+ cmp    $0x1,%rdx
+-jne    2f5 <memcpy_avx2_nt+0x2f5>
++jne    4a5 <memcpy_avx2_nt+0x4a5>
+ movzbl (%rsi),%ecx
+ mov    %cl,(%rax)
+ vzeroupper
