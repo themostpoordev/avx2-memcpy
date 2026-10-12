@@ -84,3 +84,14 @@ same size - their windows are longer, not their memory access better.
    the two-tier model) are mostly artefacts of the 100-iteration cap. Kernel 3
    should be re-measured on the corrected window; Kernel 4's campaign does this
    for free, because `sse2` is its `prev`.
+
+---
+
+**Footnote (added with the audit upgrade, commit `phase2: audit-width gate`):**
+H5 log lost; its `iters`/`budget` are unrecoverable. The surviving evidence is
+`results/phase2_sse2long_znver2.csv` (and the `sse2diag`/`sse2diag2` CSVs next to
+it) plus this file. The instrument settings that would have made the log
+self-describing were added to `mo_measure.sh` afterwards — see commit `6a61b1c`,
+"fix measurement log header omits the window settings" — and the no-evidence-
+outside-the-repo rule that would have prevented the loss is now section 9 of
+`results/MEASUREMENT_PROTOCOL.md`.

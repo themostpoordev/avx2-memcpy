@@ -61,7 +61,7 @@ ifeq ($(filter $(TARGET),$(TARGETS)),)
 $(error TARGET must be one of: $(TARGETS))
 endif
 
-.PHONY: all bench single perf objdump plot clean list audit snapshot
+.PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot
 
 all: $(BINS)
 bench: $(BINS)
@@ -113,6 +113,22 @@ audit: $(BINS)
 	  done; \
 	done; \
 	exit $$fail
+
+# ---- memory-access width gate (mandatory before any benchmark) ------------
+# `audit` (above) proves the SCALAR_SRCS TUs hold no vector instructions. It
+# cannot see the width of the accesses inside the vector rungs, which is how the
+# same SLP-merge defect passed unnoticed twice (43f01dc: the SSE2 rung compiled to
+# 32-byte ymm; 25faacb: the AVX2 rung's small path did too). This target closes
+# that gap mechanically: for every kernel TU and every target it disassembles the
+# object, finds the widest data-movement access, and fails if it is not the width
+# the rung declares. See scripts/audit_width.sh and scripts/audit_width_allow.txt.
+audit-width: $(BINS)
+	@sh scripts/audit_width.sh
+
+# `gate` is what a campaign must pass before it is allowed to produce a timing
+# row: both audits, in one command, with one exit status.
+gate: audit audit-width
+	@echo "gate: audit + audit-width PASSED - benchmarking permitted"
 
 # ---- committed CSV snapshots (frozen record of finalized kernels) ----------
 # results/*.csv is gitignored (rewritten every run). A kernel that has passed

@@ -1,0 +1,18 @@
+# scripts/audit_width_allow.txt — widening exceptions for `make audit-width`.
+#
+# Absence of an entry means STRICT enforcement: the rung's widest memory access
+# must equal the width declared for it in scripts/audit_width.sh.
+#
+# A rung may only widen beyond its ladder width with BOTH of:
+#   1. a line here, of the form
+#          <source-basename> <bits>  # reason
+#      and
+#   2. an explicit statement of the widened width in that source file's own
+#      header comment.
+# The audit prints every override it applies, so the exception is visible in the
+# build log rather than inferred. Nothing is auto-approved: a human adds the line.
+#
+# Example (NOT active):
+#   memcpy_avx2.c 512  # deliberate: shuffles two 256-bit lines at once, see header
+#
+# Current state: empty. Every rung is within its declared width.

@@ -178,9 +178,14 @@ floor that was not published.
 
 ```sh
 make                                              # 3 targets, 0 warnings
+make gate                                         # MANDATORY: audit + audit-width
 scripts/mo_measure.sh <target> <impls> memcpy <sizes> <log>   # ≤9 windows, pinned
 scripts/mo_analyze.sh <log> <kernel> <prev> <target> [op]   # report + CSV
 ```
+
+`make gate` is not optional and `mo_measure.sh` runs it itself, refusing to
+write a timing row if either audit fails (section 8). A campaign log therefore
+carries a `# gate:` line as its own evidence that the gate ran.
 
 `mo_measure.sh` enforces the window count (always 9) and the pinning;
 `mo_analyze.sh` applies the band-aware claim floor, publishes both verdicts and
@@ -206,6 +211,99 @@ make snapshot        # results/phase2_<impl>_<target>.csv -> results/committed/.
   record that silently changes is not a record. Re-running the same measurement
   is a no-op (`cmp -s` equal); a genuinely different result needs a new name and
   an explanation, not an overwrite;
-* snapshotted so far: `phase2_naive_{znver2,znver3,v3}.csv` and
-  `phase2_word_{znver2,znver3,v3}.csv` (commit `phase2: snapshot committed CSVs
-  for naive and word`).
+* snapshotted so far: `phase2_{naive,word,sse2,avx2,avx2_pf2,avx2_pf4}_<target>.csv`
+  for all three targets, plus `phase2_sse2_longwin_<target>.csv`, the long-window
+  re-measurement of Kernel 3 (21 frozen files in total). Superseded views
+  (`*_shortwin_*`, `*_budget5s_*`) are deliberately NOT snapshotted.
+
+## 8. Compiler Overreach — Known Risk
+
+The compiler is a participant in this experiment, not a tool. It has silently
+changed the width of a kernel's memory access twice, in two consecutive rungs,
+and both times the change was invisible to every check that existed at the time.
+
+### The two occurrences
+
+| commit | rung | what the source asked for | what clang produced |
+|:--|:--|:--|:--|
+| `43f01dc` | Kernel 3 `memcpy_sse2` | two adjacent 16 B `_mm_loadu_si128` / `_mm_storeu_si128` | one 32 B `vmovups` on `ymm` — rung 3 compiled to rung 4 |
+| `25faacb` | Kernel 4 `memcpy_avx2` small path (32–63 B) | four 16 B accesses | two 32 B `ymm` pairs — the source comment claiming "never uses a 32-byte access" was false as compiled |
+
+Both were found by hand, after the fact, by reading `objdump`. The first was
+caught before any timing was taken; the second after Kernel 4 had been measured,
+which is why its report carries an explicit retraction of a claim built on the
+source comment rather than on the binary.
+
+### Why verify-first does not catch them
+
+`verify` tests **behaviour**: every byte in `[0,n)` is copied, and the 64 B
+canaries on both sides of `dst` are untouched. Both defects pass that test
+completely — the SSE2 rung was a perfectly correct memcpy, and the AVX2 small
+path's 32 B accesses both live inside `[0,n)`, so nothing was ever corrupted.
+A width change is a change in *how* the bytes move, and verify does not look at
+how. `verify` also cannot see the upside: it cannot tell 16 B from 32 B, so it
+cannot tell rung 3 from rung 4.
+
+### Why `make audit` did not catch them
+
+`make audit` only inspects `SCALAR_SRCS` (the naive/word/ref_scalar ladders) and
+only asks whether they contain vector instructions at all. It has no opinion
+about the width of the accesses inside the vector rungs, so an SLP merge inside
+a 128-bit rung is exactly the case it cannot see.
+
+### Why `make audit-width` now exists
+
+`make audit-width` (`scripts/audit_width.sh`) disassembles every kernel object,
+finds the widest data-movement instruction that touches memory, and compares it
+with the width the rung declares (naive/ref_scalar 8, word 64, sse2 128,
+avx2* 256; `memset_*` follows the same ladder). A mismatch fails the build with
+the offending instructions named, and nothing is auto-fixed or auto-approved: a
+human either fixes the source or updates the declaration. A rung may widen only
+through `scripts/audit_width_allow.txt`, which is empty, so enforcement is strict
+by default; any override is printed in the build log.
+
+Its own sensitivity is part of the gate: `sh scripts/audit_width.sh --selftest`
+compiles the historical shape and must report 256 bits, then 128 once the
+`43f01dc` cure is applied. The self-test also recorded a finding that changed how
+this risk is understood:
+
+* **`-fno-slp-vectorize` does not prevent the 16 B → 32 B merge.** The selftest
+  still measures 256 bits with SLP disabled, because the fusion is a separate x86
+  optimisation. That is why the SSE2 rung's fix had to disable AVX outright
+  (`-mno-avx -mno-avx2 -mno-fma`), and why the AVX2 rung's small path — which
+  cannot disable AVX, because its main loop needs it — was documented rather than
+  flag-fixed.
+
+`make gate` runs `audit` and `audit-width` together, and `scripts/mo_measure.sh`
+invokes it before the first window: **no timing row is written until both pass**,
+and the campaign log records the gate's exit status.
+
+### Rules that follow
+
+* **Never trust a source comment about codegen. Only `objdump` is evidence.**
+  Both occurrences were comment-versus-binary mismatches; the comments were
+  aspirational and the binary was the truth.
+* **If a kernel's measured performance changes by more than 5 % between two
+  builds with no source change, re-run `objdump` immediately.** Compiler
+  decisions are not stable across context — a different inlining decision, an
+  extra neighbouring instruction, or a new flag can flip an optimisation. A
+  performance change with no source change is a codegen change by definition and
+  must be explained before it is believed.
+* **A width claim is a measurement, not an intention.** Declare the ladder width
+  in the audit table, and let the gate compare the binary against it.
+
+## 9. Evidence location (§evidence)
+
+* No evidence file may live outside `/root/avx2-memcpy/`.
+* Scripts that produce or interpret evidence belong in `scripts/`; they are
+  tracked, so a report can always name the program that generated it. A generator
+  cited in a report must be reproducible from the repository: the Kernel 3/4
+  report generator moved out of `/tmp` into `scripts/phase2_k4_report.sh` for
+  exactly this reason.
+* Raw measurements belong in `results/` (`results/*.csv`, `results/*.log` are
+  gitignored by policy; finalized views are frozen through `make snapshot`, and
+  the tables that must survive in history are written into tracked `.txt`/`.md`
+  reports).
+* `/tmp` is for transient compile output only, never for evidence. The H5
+  diagnostic's log lived there and was lost, which is what this rule prevents;
+  see the footnote in `results/h4_diagnostics.md`.

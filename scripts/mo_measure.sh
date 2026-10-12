@@ -49,6 +49,18 @@ command -v taskset >/dev/null 2>&1 || {
     exit 2
 }
 
+# MANDATORY GATE. `make audit` (no vector instructions in the scalar TUs) and
+# `make audit-width` (every rung's widest memory access equals its declared width)
+# must both pass before this driver is allowed to write a single timing row. The
+# width gate exists because that is how the same SLP-merge defect reached two
+# consecutive kernels unnoticed; see scripts/audit_width.sh. The result is echoed
+# into the log below, so a campaign's own raw evidence shows the gate ran.
+if ! make -s gate >/dev/null 2>&1; then
+    echo "mo_measure: refusing to measure - 'make gate' failed; output follows" >&2
+    make audit audit-width >&2 || true
+    exit 2
+fi
+
 mkdir -p "$(dirname "$LOG")"
 : > "$LOG"
 # The window settings are part of the measurement, not decoration: H5
@@ -59,6 +71,7 @@ mkdir -p "$(dirname "$LOG")"
 printf '# mo_measure target=%s impls=%s op=%s sizes=%s reps=%s pin=cpu%s maxwin=%s minwin=%s stable=%s%% iters=%s budget=%s warmup=%s run_to_cap=%s\n' \
     "$TARGET" "$IMPLS" "$OP" "$SIZES" "$REPS" "$PIN" "$MAXWIN" "$MINWIN" "$STABLE_PCT" \
     "$ITERS" "$BUDGET" "$WARMUP" "$RUN_TO_CAP" >> "$LOG"
+printf '# gate: make audit PASSED and make audit-width PASSED (rc=0) before window 1\n' >> "$LOG"
 
 # Rule 2 stability: min_of_mins is the smallest min_ns over ALL reps in ALL
 # windows, so the quantity that must stabilise is the CUMULATIVE running
