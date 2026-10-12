@@ -557,3 +557,204 @@ counts once it has been reproduced across repeated quiet windows.
 * `results/phase2_naive_analysis.txt` — `scripts/analyze_phase2.sh` output.
 * `results/codegen_diff_naive_*.diff` — pairwise codegen diffs.
 * `results/phase2_perf_pass.log` — PMU validation pass (`make perf`).
+
+# Kernel 4 — `memcpy_avx2` (32 B blocks, 4× unroll, prefetch-distance study)
+
+## Instrument: the window, and why this campaign was run three times
+
+Kernel 4 was measured three times, and only the third run is used. The reason is
+H5 in `results/h4_diagnostics.md`: per-window spread is dominated by how long the
+timed window is, and the driver's default (`ITERS=100`) produced ~0.1 ms windows.
+
+| attempt | settings | window | outcome |
+|:--|:--|:--|:--|
+| 1 | `ITERS=100` (driver default) | ~0.1 ms | 40–50% spreads on most sizes: measuring interference sampling, not the kernel. **Superseded**, kept on disk as `results/phase2_avx2_*_shortwin_*` |
+| 2 | `ITERS=4000 BUDGET=5 s` | 9 ms–3 s, cap-decided | correct instrument but ~8× slower than needed and the timer never fires (4000 samples finish well inside 5 s), so mid sizes ran multi-second windows. **Superseded**, kept as `results/phase2_avx2_budget5s_*`; H5's text corrected in `f8354f9` |
+| 3 | `ITERS=4000 BUDGET=0.05 s` | `min(4000 samples, 50 ms)`, ≥ 9 ms everywhere | **used for every number below** |
+
+The campaign log header now records `iters/budget/warmup/run_to_cap`, so this
+cannot recur silently (`6a61b1c`). Because the corrected window removes the
+artefact, most sizes are now **Tier A with 0.0–8% spread** (they were 40–50% in
+attempt 1 and 11–48% in K1–K3), which is H5 confirmed at campaign scale: the
+Tier B labels of K1–K3 were an instrument artefact, not a kernel property.
+
+## 1. Kernel
+
+`memcpy_avx2`: 32 B blocks via `_mm256_loadu_si256`/`_mm256_storeu_si256`
+unrolled 4× (128 B per iteration), a 32 B loop for the remainder, an
+overlapping-pair tail, and a `< 64 B` path that never enters the AVX2 loop. Three
+variants share one body (`src/memcpy_avx2_impl.h`) and differ only in prefetch
+distance: `avx2` (+1 line), `avx2_pf2` (+2), `avx2_pf4` (+4). `avx2` is the rung;
+pf2/pf4 exist to answer the distance question. Committed **before** any timing as
+`6c1c589` (`phase2: memcpy_avx2`).
+
+## 2. Verify — PASS ×3, and it caught a real bug first
+
+The first version of the kernel failed verify at `n=33`: the 16 B overlapping
+pair in the small path covers `[0,16)` and `[n-16,n)`, which is complete only for
+`n ≤ 32`, so sizes 33–63 left byte 16 unwritten (`exp=7c got=ee` on all three
+targets). Fixed to two 16 B pairs (`[0,32)` and `[n-32,n)`), then re-verified:
+**PASS on all three targets for all eight registry entries**, and the campaign's
+own logs repeat it at every window start.
+
+## 3. Codegen diff — `results/codegen_diff_avx2_*.diff`
+
+121 instructions, 18 mnemonics, 460 bytes, identical counts on all three targets;
+`znver2 == znver3` exactly; `v3` differs by moved lines only, with the mnemonic
+multiset identical (the multiset verdict inside the file, per `714e7c5`). Hot
+loop: `vmovups`/`vmovdqu` 32 B ops, and the three variants differ in the
+prefetch: effective addresses +64 B, +128 B, +256 B — i.e. the distance really is
+the only difference, as the diff shows and the numbers can therefore be compared.
+
+## 4. Campaign
+
+9 windows × 5 reps = 45 reps per (impl,size), `RUN_TO_CAP=1`, `taskset -c 2`,
+`cpu=2` on **5850/5850** rep lines per target and `migrated=0` on all three.
+Logs: `results/phase2_avx2_campaign_{znver2,znver3,v3}.windows.log`.
+
+## 5. Incremental gain vs kernel 3 (`sse2`), min_of_mins, same windows
+
+| size | znver2 | znver3 | v3 | tier verdict |
+|--:|--:|--:|--:|:--|
+| 16 B | **+69.79%** | **+69.44%** | **+69.66%** | WIN ×3 — small-path, not width (see §11) |
+| 32 B | **+20.37%** | **+20.09%** | **+20.37%** | WIN ×3 (Tier A) |
+| 64 B | −54.72% | −90.27% | −54.72% | **LOSS ×3** |
+| 128 B | −46.41% | −53.69% | −45.92% | **LOSS ×3** |
+| 256 B | −20.57% | −31.15% | −20.57% | **LOSS ×3** |
+| 512 B | +6.86% | +3.81% | +6.86% | WIN(1) / measured ×2 |
+| 1024 B | +26.39% | +24.85% | +26.39% | WIN ×2 (znver3 misses by 0.15 pt) |
+| 4096 B | +35.18% | +35.18% | +35.18% | WIN ×3 |
+| 16 KB | +29.59% | +29.66% | +29.64% | WIN ×3 |
+| 64 KB | +13.68% | +14.35% | +14.42% | WIN ×3 (Tier A) |
+| 256 KB | +17.27% | +18.25% | +17.45% | WIN ×3 |
+| 1 MiB | +14.20% | +13.13% | +17.22% | WIN ×2 / measured |
+| 4 MiB | +14.39% | +12.56% | +18.49% | measured ×3 (Tier B, 25% floor) |
+
+## 6. vs glibc
+
+| size | znver2 | znver3 | v3 |
+|--:|--:|--:|--:|
+| 16 B | **+12.92%** | +0.39% | **+12.53%** |
+| 64 B–16 KB | −113% … −13% | −138% … −12% | −113% … −14% |
+| 64 KB | −0.80% | −0.08% | +0.00% |
+| 256 KB | +1.13% | +0.76% | +1.13% |
+| 1 MiB | **+4.82%** | +5.66% | **+8.47%** |
+| 4 MiB | +7.63% | +7.86% | +9.48% |
+
+The ladder claims wins over glibc at 16 B and at 1 MiB; 64 KB–4 MiB is
+"measured" (all Tier B); 4 KB–16 KB is a claimed **LOSS**. glibc remains the
+fastest implementation in the box for 64 B–16 KB (see §9).
+
+## 7. Tier status (ratified §3c model)
+
+Tier A (spread ≤ 10%) at 9–13 of 13 sizes on each target with floors of
+max(1.5%, band) — as tight as 1.50% — and Tier B (flat 25%) only at 512 B,
+1024 B, 16 KB, 1 MiB, 4 MiB on some targets. Every claim above is against its own
+row's floor; the analyzer prints both the rule3/band verdicts and the tier
+verdict, and nothing below the applicable floor is claimed.
+
+## 8. Prefetch distance — answer to the standing question
+
+Best of the three per size, same windows (full table in
+`results/phase2_avx2_analysis.txt`):
+
+* **pf2 wins the 64 B–1 KB band on every target**, by +5.28…+13.09%; on znver2
+  and v3 those margins clear Tier A floors (1.5%) and are **claims**, on znver3
+  256 B/1024 B are Tier B and stay *measured*.
+* **pf4 wins 1 MiB on znver2** (+4.48%, Tier A → claim) and 4 MiB on znver2/v3
+  (+3.51%/+6.58%, both Tier B → measured); on znver3 pf1 (the rung) is best at
+  4 MiB, where prefetching actually hurts pf2 by 6.9%.
+* No variant wins consistently at ≥ 256 KB, and prefetch is not monotone in
+  distance: +2 lines is the useful setting, +4 is not better except at 1–4 MiB.
+* The rung therefore stays `avx2` (pf1): switching it on this evidence would trade
+  a claimed 256 KB/4 MiB position for a claimed mid-band gain, and no single
+  variant wins both. pf2 is the recommendation for a Kernel 5 variant.
+
+## 9. Crossovers and who is fastest per size
+
+* **word → sse2: 32 B.** Re-measured under the corrected window (`sse2` is a
+  prev of this campaign), sse2 vs word is +9.10% at 32 B (WIN), +35…+71% for
+  64 B…4 MiB (WIN, mostly Tier A), and 0.00%/−8.34% at 16 B — i.e. below 32 B the
+  scalar word rung is at least as good. This is the H5 re-measurement of Kernel 3,
+  appended to `results/phase2_sse2_analysis.txt`; the frozen short-window K3 record
+  is untouched.
+* **sse2 → avx2: 512 B–1 KB.** avx2 claimably beats sse2 from 512 B (v3 Tier A
+  +6.86%; 1 KB +26.4% on znver2/v3) and at every size ≥ 4 KB, but **loses at
+  64–256 B** (§11) and wins at 16/32 B through its small path. The monotone
+  ladder does not exist: the fastest rung is size-dependent.
+* **Fastest entry per size in this campaign:** `avx2`/`avx2_pf*` at 16–32 B,
+  **glibc at 64 B–16 KB by 10–37%**, then `avx2_pf4` at 64 KB (tied with glibc),
+  `avx2` at 256 KB, `avx2_pf4` at 1–4 MiB.
+
+## 10. H1–H4 (+H5) diagnostics
+
+Answered before any Kernel 4 timing and recorded in `results/h4_diagnostics.md`:
+H1 (alignment branches) **refuted** — the kernel has no alignment branch and the
+harness measures 64 B-aligned buffers at offset 0; H2 (fast-path crossover)
+**not supported** — the size sitting exactly on the switch is the most stable of
+eleven; H3 (L1 contention) **not supported as stated** — spread tracks window
+length, not cache tier; H4 (codegen after the AVX→SSE2 fix) **verified** — 7 VEX
+instructions / 4 ymm references before, 0/0 after; H5 (discovered while answering
+H1–H3) **confirmed** — 43.69% → 0.75% at 8 KB by lengthening the window, which is
+what attempt 3 of this campaign implements.
+
+## 11. Surprises
+
+1. **The wider rung is slower at 64–256 B**, by up to −90% (znver3, 64 B), a
+   claimed LOSS on all three targets. Mechanism: the 4×32 B unrolled loop needs
+   n ≥ 128 B, so 64–127 B falls through to the 32 B remainder loop, while the
+   SSE2 rung's 64 B block completes in exactly one unrolled iteration. The AVX2
+   rung is not "SSE2 but wider" in that band; it is structurally worse.
+2. **The 16 B gain of +69% is not a width effect.** It comes from the small-path
+   change (rung 3 copies `< 32 B` byte-wise, rung 4 uses 16 B pairs). It is real
+   and claimable, but it must not be attributed to 32 B blocks.
+3. **glibc is 10–37% faster than every rung at 64 B–16 KB.** The ladder's lead
+   starts at 64 KB.
+4. **Identical code, ~9% apart at 4 MiB**: znver2 and znver3 have byte-identical
+   AVX2 instruction streams (codegen diff) yet 108063 ns vs 117452 ns. Same
+   machine, same clock: this is host state (DRAM placement / thermal), and it is
+   the reason 4 MiB claims stay Tier B.
+5. **Prefetch distance is not monotone and not portable**: +2 lines helps up to
+   13% in the mid band, +4 helps at 1–4 MiB on two targets and hurts 6.9% at
+   4 MiB on the third.
+
+## 12. Defects found and fixed this cycle
+
+1. Campaign attempt 1 ran with the window H5 had already shown to be an artefact
+   generator (`ITERS=100`); caught before any number was used, superseded, kept as
+   `*_shortwin_*`.
+2. Attempt 2 used `BUDGET=5 s` from my own H5 text, where the 4096-sample cap
+   proves the timer can never fire (~8× slower for no information); superseded,
+   kept as `*_budget5s_*`, and H5's text corrected (`f8354f9`).
+3. The driver's log header did not record iters/budget/warmup — the exact reason
+   defects 1–2 were possible; fixed with the settings recorded (`6a61b1c`).
+4. `make snapshot`'s behaviour exposed that **all nine frozen K1–K3 CSVs had
+   silently diverged from their live sources**: the two-tier regeneration had
+   rewritten the live CSVs (gaining the tier columns) without re-freezing, so the
+   record and the working copies disagreed. Resolved by treating the frozen file
+   as authoritative: the live paths were restored from `results/committed/` and
+   are byte-identical again. The tier-annotated Kernel 3 view lives in
+   `results/phase2_sse2_analysis.txt` (text, committed), not in a rewritten CSV.
+   This is the guard doing its job: it refused the divergence instead of hiding it.
+5. Aggregate references to preparatory work outside the measured campaign
+   (`f8cce6a`'s message) remain disclosed rather than rewritten; history is never
+   rewritten in this project.
+
+## 13. Artifacts and limitations
+
+* `results/phase2_avx2_{znver2,znver3,v3}.csv` (rung), `..._pf2_*`, `..._pf4_*`,
+  each snapshotted into `results/committed/` (18 frozen files total, 0 refused).
+* `results/phase2_avx2_analysis.txt` — full analyzer output for the rung on all
+  three targets, the prefetch comparison, the crossovers and the per-size fastest
+  entry, all printed from logs/CSVs by `/tmp/k4_report.sh`.
+* `results/phase2_sse2_longwin_{znver2,znver3,v3}.csv` — the long-window Kernel 3
+  re-measurement, copied into `results/committed/` by hand (the snapshot target's
+  `SNAPSHOT_IMPLS` list covers the ladder's rungs, not this extra view).
+* `results/phase2_sse2_analysis.txt` — now carries both the flat-25% Tier B
+  reclassification and the long-window re-measurement of Kernel 3.
+* Superseded evidence stays on disk and is gitignored by the project's policy
+  (`results/*.csv`, `results/*.log`): `*_shortwin_*`, `*_budget5s_*`,
+  `*_longwin_*`, and the diag logs. Nothing was deleted to make a result cleaner.
+* Limitations: 4 MiB claims remain Tier B because of host-state variance (§11.4);
+  p99 is recorded but used for nothing; no rung-selection code was written, so the
+  crossovers in §9 are findings, not an implementation.

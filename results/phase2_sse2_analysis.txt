@@ -238,3 +238,81 @@ CONCLUSION: the +54-77% SSE2 gains over the word rung are CLAIMS under Tier B, n
 measurements - every one exceeds the flat 25% floor. 16 B is "measured" on all three
 targets (its deltas are -4.4%, +0.0%, +3.9%), and znver3 32 B is a measured -20.1%
 regression that the 25% floor does NOT promote to a LOSS claim (Tier B).
+
+
+================================================================================
+LONG-WINDOW RE-MEASUREMENT OF KERNEL 3 (H5 item 4)
+================================================================================
+H5 concluded that the 11-12 of 13 UNSTABLE labels on Kernel 3 were an artefact of
+the ~0.1 ms timed window used by K1-K3, and said Kernel 3 should be re-measured on
+the corrected window. The Kernel 4 campaign measures that for free: sse2 is its
+prev, so the rung was re-measured in the same corrected windows as avx2.
+Source: results/phase2_sse2_longwin_<target>.csv. The frozen short-window record
+(results/committed/phase2_sse2_*.csv) is left exactly as it was; this is the same
+kernel measured with a longer instrument, not a correction of that record.
+Every number below is printed by awk from the CSV.
+
+#### znver2
+
+| size | tier | spread % | null band % | delta vs word % | floor % | verdict | delta vs glibc % |
+|--:|:--|--:|--:|--:|--:|:--|--:|
+| 16 | A | 0.00 | 8.70 | +0.00 | 8.70 | **measured** | -188.30 |
+| 32 | A | 0.00 | 0.07 | +9.10 | 1.50 | **WIN** | -25.14 |
+| 64 | B | 21.96 | 26.63 | +35.37 | 25.00 | **WIN** | -37.67 |
+| 128 | A | 0.00 | 0.00 | +48.14 | 1.50 | **WIN** | -30.13 |
+| 256 | A | 0.00 | 0.00 | +60.49 | 1.50 | **WIN** | -58.99 |
+| 512 | B | 22.18 | 0.00 | +66.68 | 25.00 | **WIN** | -47.25 |
+| 1024 | B | 17.80 | 0.00 | +70.36 | 25.00 | **WIN** | -81.72 |
+| 4096 | A | 0.00 | 0.00 | +68.01 | 1.50 | **WIN** | -93.95 |
+| 16384 | A | 0.81 | 0.35 | +69.54 | 1.50 | **WIN** | -60.76 |
+| 65536 | B | 34.95 | 0.08 | +63.96 | 25.00 | **WIN** | -16.77 |
+| 262144 | A | 3.64 | 3.74 | +62.46 | 3.74 | **WIN** | -19.51 |
+| 1048576 | A | 4.02 | 0.06 | +58.69 | 1.50 | **WIN** | -10.93 |
+| 4194304 | B | 12.56 | 0.63 | +58.07 | 25.00 | **WIN** | -7.90 |
+
+tally: Tier A=8 Tier B=5 | Tier A WIN=7 | Tier B WIN=5 | measured=1 | LOSS=0
+
+#### znver3
+
+| size | tier | spread % | null band % | delta vs word % | floor % | verdict | delta vs glibc % |
+|--:|:--|--:|--:|--:|--:|:--|--:|
+| 16 | A | 0.00 | 4.35 | -8.34 | 4.35 | **LOSS** | -225.97 |
+| 32 | A | 0.62 | 2.44 | +0.00 | 2.44 | **measured** | -25.14 |
+| 64 | A | 0.00 | 1.37 | +37.57 | 1.50 | **WIN** | -25.14 |
+| 128 | A | 0.00 | 0.04 | +45.97 | 1.50 | **WIN** | -30.13 |
+| 256 | A | 0.00 | 0.04 | +60.49 | 1.50 | **WIN** | -58.99 |
+| 512 | A | 0.00 | 0.00 | +66.60 | 1.50 | **WIN** | -47.25 |
+| 1024 | B | 16.33 | 0.00 | +71.02 | 25.00 | **WIN** | -81.72 |
+| 4096 | A | 0.00 | 0.00 | +68.01 | 1.50 | **WIN** | -93.95 |
+| 16384 | A | 0.74 | 0.12 | +69.26 | 1.50 | **WIN** | -58.87 |
+| 65536 | B | 34.24 | 0.04 | +64.73 | 25.00 | **WIN** | -16.85 |
+| 262144 | A | 2.02 | 4.24 | +61.82 | 4.24 | **WIN** | -21.40 |
+| 1048576 | A | 3.21 | 4.74 | +58.93 | 4.74 | **WIN** | -8.60 |
+| 4194304 | B | 24.18 | 4.83 | +55.23 | 25.00 | **WIN** | -5.38 |
+
+tally: Tier A=10 Tier B=3 | Tier A WIN=8 | Tier B WIN=3 | measured=1 | LOSS=1
+
+#### v3
+
+| size | tier | spread % | null band % | delta vs word % | floor % | verdict | delta vs glibc % |
+|--:|:--|--:|--:|--:|--:|:--|--:|
+| 16 | A | 0.00 | 0.00 | +0.00 | 1.50 | **measured** | -188.30 |
+| 32 | A | 0.00 | 0.01 | +9.10 | 1.50 | **WIN** | -25.14 |
+| 64 | A | 0.00 | 0.48 | +35.37 | 1.50 | **WIN** | -37.67 |
+| 128 | B | 15.49 | 0.00 | +48.14 | 25.00 | **WIN** | -30.13 |
+| 256 | A | 0.00 | 0.00 | +60.39 | 1.50 | **WIN** | -58.99 |
+| 512 | A | 0.00 | 0.00 | +66.68 | 1.50 | **WIN** | -47.25 |
+| 1024 | A | 0.00 | 0.00 | +70.35 | 1.50 | **WIN** | -81.72 |
+| 4096 | A | 0.00 | 0.05 | +67.93 | 1.50 | **WIN** | -93.95 |
+| 16384 | A | 1.40 | 0.08 | +69.44 | 1.50 | **WIN** | -62.62 |
+| 65536 | A | 0.62 | 0.00 | +64.56 | 1.50 | **WIN** | -16.85 |
+| 262144 | A | 3.61 | 0.29 | +62.17 | 1.50 | **WIN** | -19.77 |
+| 1048576 | A | 2.19 | 5.39 | +58.42 | 5.39 | **WIN** | -10.58 |
+| 4194304 | B | 13.72 | 1.46 | +52.57 | 25.00 | **WIN** | -11.05 |
+
+tally: Tier A=11 Tier B=2 | Tier A WIN=10 | Tier B WIN=2 | measured=1 | LOSS=0
+
+With the corrected window the Tier A floors apply at most sizes (typically 1.5%),
+so Kernel 3 gains are claims under Tier A, not merely under the flat Tier B floor:
+the +35..71% gains over the word rung hold, and the earlier flat-25% reclassification
+in this file is the conservative version of the same conclusion.
