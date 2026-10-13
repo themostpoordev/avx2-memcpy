@@ -54,6 +54,14 @@ SSE2_FLAGS := -mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize -fno-vectorize
 # Any new src/*.c kernel is picked up automatically (no Makefile edit per kernel).
 SRCS   := $(wildcard src/*.c) $(wildcard bench/*.c)
 SRC_OBJ := $(patsubst %.c,%.o,$(SRCS))
+# Hand-written assembly rungs (src/*.S) are picked up the same way, so a kernel
+# written in asm needs no per-kernel Makefile edit either. Tooling is clang's
+# INTEGRATED assembler in GAS/AT&T syntax: no nasm (not installed, and installing
+# one is not permitted). The capital .S means the file also goes through the C
+# preprocessor, which is what the kernel's comments rely on.
+ASM_SRCS := $(wildcard src/*.S)
+ASM_OBJ  := $(patsubst %.S,%.o,$(ASM_SRCS))
+SRC_OBJ  += $(ASM_OBJ)
 BINS   := $(addprefix bench/bench_,$(TARGETS))
 
 TARGET ?= znver2
@@ -76,6 +84,13 @@ build/$(1)/%.o: %.c
 	  -DTARGET_NAME='"$(1)"' $$(if $$(filter $$<,$$(SCALAR_SRCS)),$$(SCALAR_FLAGS),) \
 	  $$(if $$(filter $$<,$$(SSE2_SRCS)),$$(SSE2_FLAGS),) \
 	  -MMD -MP -c $$< -o $$@
+
+# Assembly rung: same per-target -march/-mavx2 flags, so the integrated assembler
+# accepts the AVX2 it is told to use. -std/-fno-builtin are C concepts and are
+# deliberately not passed here.
+build/$(1)/%.o: %.S
+	@mkdir -p $$(dir $$@)
+	$$(CC) $$(OPT) $$(WARN) $$(FLAGS_$(1)) $$(INC) -c $$< -o $$@
 
 bench/bench_$(1): $$(addprefix build/$(1)/,$$(SRC_OBJ))
 	@mkdir -p bench
@@ -104,7 +119,8 @@ audit: $(BINS)
 	  echo "--- target $$t"; \
 	  for o in $$(ls build/$$t/src/*.o 2>/dev/null); do \
 	    n=$$(objdump -d --no-show-raw-insn $$o | grep -cE '\bv[a-z0-9]+[[:space:]]+\(?%?[xy]mm'); \
-	    rel=$${o#build/*/}; src=$${rel%.o}.c; \
+	    rel=$${o#build/*/}; stem=$${rel%.o}; \
+	    src=$$stem.c; [ -f "$$src" ] || src=$$stem.S; \
 	    must=$$(echo "$(SCALAR_SRCS)" | tr ' ' '\n' | grep -Fx "$$src" || true); \
 	    if [ -n "$$must" ]; then mark="[SCALAR_SRCS: must be scalar]"; else mark=""; fi; \
 	    printf '  %-34s vector_insns=%-4s %s\n' "$$src" "$$n" "$$mark"; \
@@ -172,7 +188,7 @@ ntprobe: $(addprefix ntprobe-,$(TARGETS))
 # tracked. A snapshot that already exists is FROZEN: this target refuses to
 # overwrite one that differs from the current run, because a record that
 # silently changes is not a record. Same data re-copied is a no-op.
-SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt
+SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt asm
 # NOTE on the quoting below - both of these were bugs in the first version:
 #   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
 #     `impl_` (underscore is an identifier character) followed by `$t`, so every

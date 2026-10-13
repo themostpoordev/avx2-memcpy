@@ -45,5 +45,6 @@ void *memcpy_avx2(void *dst, const void *src, size_t n);    /* kernel 4 */
 void *memcpy_avx2_pf2(void *dst, const void *src, size_t n); /* kernel 4, prefetch +2 lines */
 void *memcpy_avx2_pf4(void *dst, const void *src, size_t n); /* kernel 4, prefetch +4 lines */
 void *memcpy_avx2_nt(void *dst, const void *src, size_t n);  /* kernel 5, non-temporal stores */
+void *memcpy_asm(void *dst, const void *src, size_t n);      /* kernel 6, hand-written AVX2 asm */
 
 #endif /* AVX2_MEM_COMMON_H */

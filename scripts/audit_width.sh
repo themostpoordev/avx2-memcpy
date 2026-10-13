@@ -48,7 +48,10 @@ SELFTEST=0
 
 # ---- declared ladder widths (bits) ----------------------------------------
 # Unknown kernel sources are NOT silently accepted: add the row or add an
-# override entry, and state why.
+# override entry, and state why. Hand-written asm rungs (src/*.S) are covered by
+# the same table: the gate disassembles the assembled object exactly as it does
+# a compiler-produced one, so a .S declaration is checked against the binary and
+# not against the source text.
 declared_bits() {
     case "$1" in
         ref_scalar.c|memcpy_naive.c|memset_naive.c)                 echo 8   ;;
@@ -57,6 +60,7 @@ declared_bits() {
         memcpy_avx2.c|memcpy_avx2_pf2.c|memcpy_avx2_pf4.c|memcpy_avx2_nt.c) \
                                                                     echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
+        memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
         *)                                                          echo ""  ;;
     esac
 }
@@ -222,14 +226,14 @@ fi
 
 # ---- the gate -------------------------------------------------------------
 echo "audit_width: widest data-movement access per kernel TU vs declared ladder width"
-echo "  declarations: naive/ref_scalar 8, word 64, sse2 128, avx2* 256; overrides from $ALLOW"
+echo "  declarations: naive/ref_scalar 8, word 64, sse2 128, avx2* 256, asm 256; overrides from $ALLOW"
 fail=0
 for t in znver2 znver3 v3; do
     echo "--- target $t"
-    for src in src/*.c; do
+    for src in src/*.c src/*.S; do
         base=$(basename "$src")
         [ "$base" = "registry.c" ] && continue           # harness table, not a kernel
-        obj="build/$t/${src%.c}.o"
+        obj="build/$t/${src%.*}.o"
         [ -f "$obj" ] || { echo "  MISSING OBJECT: $obj (run make first)"; fail=1; continue; }
         dec=$(declared_bits "$base")
         ovr=$(override_bits "$base")

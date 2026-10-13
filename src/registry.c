@@ -49,9 +49,11 @@ const impl_t g_impls[] = {
     { "avx2_nt", memcpy_avx2_nt, NULL,
       "kernel 5: as kernel 4 above the NT threshold, _mm256_stream_si256 + sfence, cached below it" },
 
+    { "asm", memcpy_asm, NULL,
+      "kernel 6: hand-written AVX2 assembly (src/memcpy_asm.S), 32B aligned store path (vmovdqa) + unaligned path (vmovdqu), scalar <64B" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
-    { "asm",     memcpy_asm,     memset_asm,     "hand-written clang-integrated asm (.S)" },
     { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },
     { "memset_naive", ... }  ... reported as the memset ladder (kernel 8)
     ---------------------------------------------------------------------- */
