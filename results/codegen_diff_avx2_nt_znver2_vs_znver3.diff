@@ -4,8 +4,9 @@
 # znver2: instructions=197  distinct_mnemonics=24  func_bytes=761
 # znver3: instructions=257  distinct_mnemonics=30  func_bytes=1193
 # verdict: DIFFERENT — 186 changed instruction line(s); unified diff follows
---- build/znver2/avx2_nt.asm	2026-10-12 19:07:58.087082279 +0200
-+++ build/znver3/avx2_nt.asm	2026-10-12 19:07:58.173747140 +0200
+# mnemonic multiset: DIFFERENT - the instruction sets differ (this is not a reordering)
+--- build/znver2/avx2_nt.asm	2026-10-13 18:07:13.482413167 +0200
++++ build/znver3/avx2_nt.asm	2026-10-13 18:07:13.572411259 +0200
 @@ -7,14 +7,14 @@
  neg    %ecx
  and    $0x1f,%ecx

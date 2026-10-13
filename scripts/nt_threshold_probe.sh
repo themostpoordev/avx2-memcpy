@@ -7,12 +7,14 @@
 #   This is a DIAGNOSTIC. It builds a probe binary in which the NT rung's
 #   threshold is forced to 64 B - so every main-path size uses NT stores - and
 #   sweeps sizes against the cached rung in the same process and the same
-#   windows. The crossover it reports is an INFERENCE from the GB/s inflection,
-#   not a measurement of the threshold: this box exposes no L3/LLC events, so
-#   cache-boundary statements cannot be measured directly here (see
-#   MEASUREMENT_PROTOCOL.md section 5). The committed rung is then built with the
-#   selected threshold, and only the 9-window campaign on THAT binary may make a
-#   claim.
+#   windows. Any crossover it reports would be an INFERENCE from the GB/s
+#   inflection, not a measurement of the threshold: this box exposes no L3/LLC
+#   events, so cache-boundary statements cannot be measured directly here (see
+#   MEASUREMENT_PROTOCOL.md section 5). On this box it reports none: NT loses at
+#   every size (69-371%), so the committed rung does NOT carry a probe-selected
+#   threshold - it keeps a fixed experimental gate (256 KB, see
+#   src/memcpy_avx2_nt_impl.h). Only the 9-window campaign on THAT binary may
+#   make a claim, and that claim is the loss the Kernel 5 report states.
 #
 #   Probe binaries are bench/bench_<t>_ntprobe (built by `make ntprobe`); they are
 #   never snapshotted and never enter a claim. Evidence lands in

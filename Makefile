@@ -134,11 +134,12 @@ gate: audit audit-width
 # ---- Kernel 5 threshold probe (diagnostic, not a rung) ---------------------
 # Builds bench/bench_<t>_ntprobe, which is every normal object EXCEPT the
 # committed memcpy_avx2_nt.o, plus that same source compiled with its NT
-# threshold forced low. That is how the NT threshold is discovered: sweep sizes
-# with NT enabled everywhere above 64 B and find where it starts winning.
-# scripts/nt_threshold_probe.sh drives it and reads the result. The probe binary
-# is never snapshotted and never enters a claim; the committed rung is built by
-# the normal rules with the threshold the probe selected.
+# threshold forced low: sweep sizes with NT enabled everywhere above 64 B to test
+# whether a size exists at which NT wins. The Kernel 5 probe found NO winning
+# size on this box (NT loses 69-371% at every size), so the committed rung keeps
+# a fixed EXPERIMENTAL GATE (MEMCPY_AVX2_NT_THRESHOLD, see its source header),
+# NOT a probe-selected crossover. scripts/nt_threshold_probe.sh drives it; the
+# probe binary is never snapshotted and never enters a claim.
 NT_THRESHOLD ?= 64
 # $(FLAGS_$$t) does NOT work here: make looks up a variable literally named
 # "FLAGS_$t" and finds nothing, so the probe object was compiled without -mavx2
@@ -171,7 +172,7 @@ ntprobe: $(addprefix ntprobe-,$(TARGETS))
 # tracked. A snapshot that already exists is FROZEN: this target refuses to
 # overwrite one that differs from the current run, because a record that
 # silently changes is not a record. Same data re-copied is a no-op.
-SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4
+SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt
 # NOTE on the quoting below - both of these were bugs in the first version:
 #   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
 #     `impl_` (underscore is an identifier character) followed by `$t`, so every

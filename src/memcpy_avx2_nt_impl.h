@@ -15,10 +15,15 @@
  * Why there is a threshold at all
  *   Below it, NT is a pessimisation: a small copy's destination is usually read
  *   back immediately, so bypassing the cache throws away the only benefit while
- *   paying the fence. The threshold is a MEASURED value, not a guess - see
- *   scripts/nt_threshold_probe.sh and the Kernel 5 report; the constant below is
- *   the value that probe selected, and it is labelled as an inference from the
- *   GB/s inflection because this box exposes no L3/LLC events.
+ *   paying the fence. The threshold is NOT a measured crossover: the probe in
+ *   scripts/nt_threshold_probe.sh found NO size at which NT wins on this box (it
+ *   loses by 69-371% at every size; see the Kernel 5 report). 256 KB is an
+ *   EXPERIMENTAL GATE, chosen so that the campaign exercises NT on the standing
+ *   ladder (>= 256 KB) and runs byte-for-byte rung 4's cached loop below it - that
+ *   is what lets the campaign measure the NT effect at all. The campaign's verdict
+ *   for this rung is a measured LOSS, not a win. Why NT is slow on this box is an
+ *   inference (a bandwidth-capped streaming write path; no L3/LLC events are
+ *   exposed here, MEASUREMENT_PROTOCOL.md section 5), and is labelled as one.
  *
  * Alignment
  *   `_mm256_stream_si256` REQUIRES a 32-byte aligned destination. An unaligned

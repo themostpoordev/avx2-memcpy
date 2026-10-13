@@ -96,7 +96,14 @@ for pair in "znver2 znver3" "znver2 v3" "znver3 v3"; do
             echo "# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)"
         else
             echo "# verdict: DIFFERENT — ${changed} changed instruction line(s); unified diff follows"
-            [ "$msame" = "1" ] && echo "# mnemonic multiset: IDENTICAL - the differences are ORDERING only (moved instructions, no instruction-set change)"
+            # The multiset verdict is stated either way. Printing it only for the
+            # ordering-only case left the other case with no multiset line at all,
+            # which reads like "not compared" rather than "compared: different".
+            if [ "$msame" = "1" ]; then
+                echo "# mnemonic multiset: IDENTICAL - the differences are ORDERING only (moved instructions, no instruction-set change)"
+            else
+                echo "# mnemonic multiset: DIFFERENT - the instruction sets differ (this is not a reordering)"
+            fi
         fi
     } > "$OUT"
     cat "$BODY" >> "$OUT"

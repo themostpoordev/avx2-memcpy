@@ -778,3 +778,196 @@ what attempt 3 of this campaign implements.
 * Limitations: 4 MiB claims remain Tier B because of host-state variance (§11.4);
   p99 is recorded but used for nothing; no rung-selection code was written, so the
   crossovers in §9 are findings, not an implementation.
+
+
+# Kernel 5 — `memcpy_avx2_nt` (32 B non-temporal stores above an experimental gate)
+
+Rung: Kernel 4's AVX2 body, with 32 B stores using `_mm256_stream_si256` above a
+threshold, one `_mm_sfence()` before return, a cached lead of at most 31 B when
+the destination is not 32 B aligned, source prefetch inherited from Kernel 4's
+winning distance (+2 cache lines, §8 above), and rung 4's cached loop below the
+threshold. Committed as `94d8d20` before any timing row existed; the threshold
+probe is `0bc6b03`.
+
+## 1. The mandatory gate (audit-width) — K5 item 1
+
+`make audit` rc=0 (no vector instruction in the scalar TUs) and `make audit-width`
+rc=0 at generation time. audit-width compares every rung's widest memory access
+with its declared ladder width, per target: all 8 kernel TUs × 3 targets report
+`declared W  compiled W  OK`, including `memcpy_avx2_nt.c  declared 256
+compiled 256  OK` on all three targets (NT stores are 32 B accesses, compiled to
+`vmovntps`). Each campaign log carries the gate's own verdict before window 1:
+`# gate: make audit PASSED and make audit-width PASSED (rc=0) before window 1`,
+and `scripts/mo_measure.sh` refuses to write a timing row without it — so the
+campaign logs cannot exist unless the gate passed first.
+
+## 2. Verify first, then codegen
+
+* `verify: avx2_nt OK` ×9 windows ×3 targets (the harness re-verifies before
+  every window: 81 verify lines per log) — glibc reference, n=0..4096 random
+  offsets, 64 B canaries both sides, plus the size list (covers the NT path, the
+  unaligned lead and the cached fallback).
+* `results/codegen_diff_avx2_nt_*.diff`, each carrying an explicit verdict: all
+  three pairs are genuinely DIFFERENT instruction sets — znver2↔znver3 186
+  changed lines, znver2↔v3 148, znver3↔v3 228, mnemonic multiset DIFFERENT in all
+  three (106/78/108 mnemonic lines). Unlike Kernel 4 (where znver2 and znver3
+  were byte-identical), this rung compiles per target, so cross-target rows are
+  not the same binary and are reported per target only.
+* NT census (verify cannot see this): `vmovntps=5  sfence=2` in every target's
+  `memcpy_avx2_nt.o`.
+
+## 3. Campaign instrument
+
+5 reps × 9 windows, `taskset -c 2`, 6435 rep lines per target, **0 migrated**,
+all `cpu=2`; `iters=4000`, `budget=0.05`, `warmup=2`, `RUN_TO_CAP=1` (recorded in
+each log's header, which is also the gate line). Disclosure: znver2 and znver3 ran
+2026-10-12 19:15–19:23; v3's first attempt was cut off by a host session
+suspension mid-window-8 (no end line, process gone) and v3 was re-run whole the
+next day — recorded in the progress log, and every comparison below is within one
+log's own windows. Driver: `scripts/phase2_k5_campaign.sh` (in the repo).
+
+## 4. Standing report — min_of_mins per size, tiers and verdicts (items 2 and 4)
+
+Below the 256 KB gate the rung runs the same source loop as rung 4, so its
+sub-256 KB deltas (up to ~10%, several clearing the Tier A floor as WIN) are
+compilation-layout and instrument effects between two builds of the same
+algorithm — flagged, not claimed. The rows that compare two algorithms are
+256 KB, 1 MiB and 4 MiB, and there the verdict is LOSS on every target.
+
+znver2 (min_of_mins ns; verdicts: vs `avx2` / vs glibc):
+
+| size | avx2 | avx2_nt | glibc | tier | nt vs avx2 | nt vs glibc |
+|--:|--:|--:|--:|:--|:--|:--|
+| 16 | 2.2 | 2.2 | 2.5 | A | measured | WIN |
+| 32 | 2.5 | 2.5 | 2.5 | A | measured | measured |
+| 64 | 5.3 | 5.3 | 2.5 | A | measured | LOSS |
+| 128 | 5.9 | 5.6 | 3.1 | A | WIN (same loop) | LOSS |
+| 256 | 7.1 | 6.8 | 3.7 | A | WIN (same loop) | LOSS |
+| 512 | 9.5 | 8.6 | 7.0 | A | WIN (same loop) | LOSS |
+| 1024 | 14.9 | 14.5 | 11.1 | A | WIN (same loop) | LOSS |
+| 4096 | 51.9 | 51.3 | 41.3 | A | measured | LOSS |
+| 16384 | 240.5 | 237.8 | 210.2 | A | measured | LOSS |
+| 65536 | 1262 | 1253 | 1262 | A | measured | measured |
+| 262144 | 5250 | 12394 | 5270 | A | **LOSS −136.1%** | LOSS |
+| 1048576 | 24406 | 50746 | 25508 | A | **LOSS −107.9%** | LOSS |
+| 4194304 | 110157 | 208393 | 117813 | A | **LOSS −89.2%** | LOSS |
+
+znver3:
+
+| size | avx2 | avx2_nt | glibc | tier | nt vs avx2 | nt vs glibc |
+|--:|--:|--:|--:|:--|:--|:--|
+| 16 | 2.5 | 2.2 | 2.5 | A | WIN | WIN |
+| 32 | 2.5 | 2.5 | 2.5 | A | measured | measured |
+| 64 | 5.9 | 5.6 | 2.5 | A | WIN (same loop) | LOSS |
+| 128 | 6.2 | 6.6 | 3.1 | A | LOSS (same loop) | LOSS |
+| 256 | 7.7 | 7.7 | 3.7 | A | measured | LOSS |
+| 512 | 9.9 | 9.5 | 7.0 | A | WIN (same loop) | LOSS |
+| 1024 | 15.2 | 15.6 | 11.1 | A | LOSS (same loop) | LOSS |
+| 4096 | 51.9 | 52.6 | 41.3 | A | measured | LOSS |
+| 16384 | 237.8 | 232.8 | 208.0 | A | WIN (same loop) | LOSS |
+| 65536 | 1262 | 1252 | 1252 | A | measured | measured |
+| 262144 | 5240 | 12544 | 5280 | A | **LOSS −139.4%** | LOSS |
+| 1048576 | 24446 | 50976 | 25488 | B (spread > 10%) | **LOSS −108.5%** | LOSS |
+| 4194304 | 111240 | 208885 | 114186 | A | **LOSS −87.8%** | LOSS |
+
+v3:
+
+| size | avx2 | avx2_nt | glibc | tier | nt vs avx2 | nt vs glibc |
+|--:|--:|--:|--:|:--|:--|:--|
+| 16 | 2.2 | 2.2 | 2.5 | A | measured | WIN |
+| 32 | 2.5 | 2.5 | 2.5 | B | measured | measured |
+| 64 | 5.3 | 5.3 | 2.5 | B | measured | LOSS |
+| 128 | 5.9 | 5.6 | 3.1 | B | measured | LOSS |
+| 256 | 7.1 | 7.7 | 3.7 | B | measured | LOSS |
+| 512 | 9.5 | 9.5 | 7.0 | B | measured | LOSS |
+| 1024 | 14.9 | 15.0 | 11.1 | B | measured | LOSS |
+| 4096 | 51.9 | 51.9 | 41.3 | A | measured | LOSS |
+| 16384 | 238.0 | 235.2 | 210.2 | B | measured | measured |
+| 65536 | 1262 | 1262 | 1262 | A | measured | measured |
+| 262144 | 5270 | 12483 | 5650 | A | **LOSS −136.9%** | LOSS |
+| 1048576 | 24015 | 51628 | 26670 | A | **LOSS −115.0%** | LOSS |
+| 4194304 | 112211 | 208403 | 113303 | A | **LOSS −85.7%** | LOSS |
+
+The per-key 9-window series (w1–w9, first floor window and last-two change) is in
+`results/phase2_avx2_nt_analysis.txt` §3, published by the analyzer, not averaged
+in here.
+
+## 5. The NT threshold — method, result, caveat (item 5)
+
+Method (`0bc6b03`): `scripts/nt_threshold_probe.sh` builds a probe binary with
+the rung's threshold forced to 64 B — NT on every main-path size — and sweeps
+8 KB–4 MiB, 3 passes × 3 reps, same process, pinned to cpu 2.
+
+Result: **no size at which NT wins, on any target.** NT throughput is flat,
+17–22 GB/s from 512 KB to 4 MiB, while the cached rung scales normally
+(34–81 GB/s); the loss is 69–372%. At 4 MiB, where the sfence is negligible
+against a ~100 µs copy, NT is still ~1.9× slower — this is not the fence and not
+a small-size artefact. **This is an inference, not a cache-boundary
+measurement**: this box exposes no L3/LLC events (protocol §5), so *why* NT is
+slow here (a bandwidth-capped streaming write path) is labelled inference while
+the loss is the measurement.
+
+Consequence: there is no discovered crossover to encode, so the committed rung
+keeps **256 KB as an experimental gate** — NT at or above it, rung 4's cached loop
+below — which is what lets the campaign measure the NT effect at all. The rung's
+measured verdict is the LOSS above; it is not a promotion candidate.
+
+## 6. Explicit crossover: `avx2` → `avx2_nt` (item 6)
+
+The only switch point is the experimental gate at 256 KB, and it is a step down:
+5250 → 12394 ns (znver2), 5240 → 12544 ns (znver3), 5270 → 12483 ns (v3) — a
+2.36–2.39× slowdown at the switch, shrinking to ~1.9× at 4 MiB. Above the gate the
+cached `avx2` rung is faster at every size on every target (and rung 4 beats glibc
+at 1 MiB and 4 MiB on znver2: 24406 vs 25508, 110157 vs 117813 ns). On this box,
+in 8 KB–4 MiB, **NT has no winning side** — a fact about this host, not about NT
+stores in general.
+
+## 7. Unaligned handling cost (32 B alignment requirement)
+
+Measured with the harness `--align2d` sweep at 1 MiB (aligned offsets vs the
+rest, where a cached lead of ≤ 31 B runs first): minimum +0.34%/+1.24%/−1.57%
+and mean +2.12%/+2.76%/+2.46% (znver3/znver2/v3). Bounded and small; v3's
+negative minimum is inside noise.
+
+## 8. Surprises (item 7)
+
+1. NT loses everywhere on this box — the textbook expectation (NT wins for
+   large, non-reused destinations) fails here, with a flat ~20 GB/s signature.
+2. Same-source-loop rows differ by up to ~10% between two rungs and can clear
+   the Tier A floor as WIN: compilation layout, not a kernel effect. The null
+   band measures harness noise, not layout, so these are flagged, not claimed.
+3. This rung compiles to genuinely different instruction sets per target
+   (197/231/257 instructions), unlike Kernel 4.
+4. v3's last window was still moving 13.31% (worst key `naive|64`) at MAXWIN;
+   the analyzer publishes that key as unusable rather than averaging it in.
+5. Tooling defects found this cycle, all fixed, none of them changing a number:
+   `codegen_diff.sh` stated a mnemonic-multiset verdict only for ordering-only
+   differences, so the "instruction sets differ" case had no multiset line at
+   all; `SNAPSHOT_IMPLS` did not contain `avx2_nt`, so the new rung's CSVs would
+   have been warned about and silently not frozen; and the source header, the
+   Makefile and the probe script described 256 KB as "the threshold the probe
+   selected", which is false — the probe selected nothing, because no winning
+   size exists. The comment-only source fix leaves all 30 build objects
+   byte-identical, so the frozen numbers still describe this binary.
+
+## 9. Artifacts and limitations
+
+* `results/committed/phase2_avx2_nt_{znver2,znver3,v3}.csv` — frozen (21
+  snapshots total, 0 refused; each cmp-identical to the working CSV).
+* `results/phase2_avx2_nt_analysis.txt` — gate proof, instrument, analyzer output
+  per target, NT census, probe tables and alignment cost; regenerated by
+  `scripts/phase2_k5_report.sh` (in the repo; every number printed by awk from a
+  log or CSV, or by the gate itself).
+* `results/codegen_diff_avx2_nt_*.diff` — three verdict-carrying diffs.
+* `scripts/phase2_k5_campaign.sh` — the campaign driver, in the repo (earlier
+  campaigns' wrappers were inline shell; protocol §9 requires evidence and scripts
+  to live inside the repo).
+* Raw campaign and probe logs are gitignored by project policy but
+  self-describing: the campaign header records impls/sizes/reps/pin/windows/
+  iters/budget and the gate line.
+* Limitations: the cause of the NT slowdown is not measurable here and is
+  reported as inference; v3 was measured one day after znver2/znver3 (disclosed
+  in §3), and this rung's cross-target codegen differs anyway, so cross-target
+  rows are per-target findings, not a hardware comparison; znver3's 1 MiB is
+  Tier B; p99 recorded, used for nothing; no selection code was written — this is
+  a finding and a rejected candidate.
