@@ -1,0 +1,6 @@
+# codegen diff: kernel=asm  znver2 vs v3
+# compared: build/znver2/asm.asm  vs  build/v3/asm.asm
+#           (function-extracted, address-stripped instruction streams from src/memcpy_asm.S)
+# znver2: instructions=155  distinct_mnemonics=23  func_bytes=617
+# v3: instructions=155  distinct_mnemonics=23  func_bytes=617
+# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)

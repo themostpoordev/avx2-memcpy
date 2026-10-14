@@ -20,7 +20,10 @@ set -eu
 SYM="$1"
 SRC="$2"
 KERNEL=$(printf '%s' "$SYM" | sed 's/^memcpy_//; s/^memset_//')
-OBJ_REL="${SRC%.c}.o"
+# Strip whichever suffix this source has: .c kernels and .S asm rungs both map to
+# a single .o next to the source. Hard-coding %.c here silently looked for
+# src/memcpy_asm.S.o when the Kernel 6 asm rung was added.
+OBJ_REL="${SRC%.*}.o"
 
 mkdir -p results
 

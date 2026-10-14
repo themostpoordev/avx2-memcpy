@@ -971,3 +971,279 @@ negative minimum is inside noise.
   rows are per-target findings, not a hardware comparison; znver3's 1 MiB is
   Tier B; p99 recorded, used for nothing; no selection code was written — this is
   a finding and a rejected candidate.
+
+# Kernel 6 — `memcpy_asm` (hand-written AVX2 assembly, `src/memcpy_asm.S`)
+
+The raw-est rung: the same algorithm as Kernel 4 (four 32 B `ymm` lanes per
+128 B, source prefetch at +2 cache lines, overlapping-pair tail), written by
+hand in GAS/AT&T syntax and assembled by clang's integrated assembler. No nasm.
+Committed as `914266f` ("phase2: memcpy_asm") before any timing row existed.
+Two things were added to it that the compiler's version does not have: a 32 B
+*aligned* store path (`vmovdqa`, entered when `dst % 32 == 0`, so no store can
+straddle a 64 B line) and a GPR-only < 64 B path (required by the rung's
+definition, expected to cost something at small sizes).
+
+## 1. The mandatory gate (report item 1)
+
+`make audit` rc=0 (no vector instruction in the scalar TUs) and
+`make audit-width` rc=0, both re-run at report-generation time and both printed
+in full into `results/phase2_asm_analysis.txt` §1. audit-width compares every
+rung's widest memory access with its declared width, per target: all 9 kernel
+TUs × 3 targets report `declared W  compiled W  OK`, including
+`memcpy_asm.S  declared 256  compiled 256  OK` — and that is not taken from the
+file's header comment: the gate disassembles the object and reads the operand
+widths off the instructions. `scripts/audit_width.sh` had to learn to see `.S`
+sources for this (the decl table and the source-derivation in `make audit` both
+assumed `%.c`), and `scripts/codegen_diff.sh` had the same assumption in its
+object-path derivation (`src/memcpy_asm.S.o`); both are fixed. The campaign's own
+logs carry the gate line before window 1, and `scripts/mo_measure.sh` refuses to
+write a timing row without it.
+
+## 2. Verify first — PASS ×3, then what the objects actually contain (item 4)
+
+* `verify: asm OK` ×9 windows ×3 targets, from the same check every other rung
+  passes: byte-for-byte against glibc for n = 0..4096 at random src/dst offsets,
+  64 B canaries both sides of the destination, plus the standing size list.
+* Assembled content (verify cannot see any of this), identical on all three
+  targets: 155 instructions, 1032 B object, `vmovdqa=5`, `vmovdqu(ymm)=19`,
+  `vmovdqu(xmm)=4`, `prefetcht0=4`, `vzeroupper=1`. Widest access is 32 B
+  everywhere, matching the declaration the gate checks.
+* **Object identity:** `build/{znver2,znver3,v3}/src/memcpy_asm.o` are one and
+  the same file by md5 (`327dd835…`, 1 distinct hash). A hand-written stream
+  cannot be `-march`-sensitive, and it is not. The C rungs are: Kernel 5's NT
+  rung compiled to three different instruction sets per target, and even Kernel
+  4's `memcpy_avx2.o` is byte-identical for znver2/znver3 (`d99162ba…`) but
+  different for v3 (`626fa5ec…`) — that fact matters in §6 and §8 below.
+
+## 3. Codegen diff — the hand-written stream against the compiler's (item 8)
+
+`results/codegen_diff_asm_vs_avx2_c_{znver2,znver3,v3}.diff` (regenerable with
+`scripts/codegen_diff_asm_vs_c.sh`; this is a *two-kernels-one-target*
+comparison, not the three-targets-one-kernel one `scripts/codegen_diff.sh`
+does). Every file is non-empty, states both instruction counts and both
+mnemonic-multiset verdicts, and its body is the address-stripped unified diff.
+All three pairs are `verdict: DIFFERENT` and `mnemonic multiset: DIFFERENT` —
+these are different instruction sets, not a reordering. Target-vs-target for
+this rung is the opposite: `codegen_diff_asm_znver2_vs_znver3.diff` and friends
+are all `IDENTICAL instruction streams` with an explicitly empty body.
+
+| | instructions | distinct mnemonics | function bytes |
+|:--|--:|--:|--:|
+| `memcpy_asm` (hand-written) | 155 | 23 | 617 |
+| `memcpy_avx2` (clang -O3 -march=znver2) | 121 | 18 | 460 |
+
+What the compiler did that the asm did not: one loop with 22 `vmovups` (it never
+uses an aligned store), a *vector* small path (`< 64 B` uses `xmm`/`ymm`
+overlapping pairs), and a prefetch at +64 B rather than +128 B. What the asm
+has and the compiler does not: the second (aligned-store) loop, the scalar-only
+small path, and exactly one `vzeroupper`/return site — clang has 7, one per
+return path. The hand-written version is *larger* than the compiler's (617 B vs
+460 B) because it pays for both store paths; the aligned path is not free.
+
+## 4. Campaign instrument
+
+`scripts/phase2_k6_campaign.sh`: 5 reps × 9 windows, `taskset -c 2`, 5850 rep
+lines per target, **0 migrated**, all `cpu=2`; `iters=4000`, `budget=0.05`,
+`warmup=2`, `RUN_TO_CAP=1`, min_of_mins primary, recorded in each log's header
+along with the gate line. Claims use the ratified two-tier model: Tier A floor
+= max(1.5%, null band), Tier B floor 25%. Disclosure: znver2's first attempt was
+aborted after 3 windows by a launcher problem (a `nohup &` inside a synchronous
+tool call did not survive it) and znver2 was re-run whole from window 1; the
+progress log records both invocations. All three targets then ran back-to-back
+in one session (18:38–18:51), so unlike Kernel 5 there is no day boundary inside
+this campaign.
+
+## 5. Standing report — 9-point min_of_mins per size (items 2, 3 and 4)
+
+min_of_mins in ns; `asm vs avx2` is rule 3 (1.5% floor) and the tier verdict is
+the authoritative one this project ratifies. Tier A/B per size comes from the
+asm row's per-key window spread (Tier B = spread > 10%). The glibc column is the
+analyzer's own `tier_verdict_vs_glibc` with its `delta_vs_glibc_pct` beside it,
+read straight from the frozen CSV — nothing in these three tables is typed in.
+
+znver2:
+
+| size | avx2 | asm | glibc | tier | asm vs avx2 (rule 3) | tier verdict | asm vs glibc (d) |
+|--:|--:|--:|--:|:--|:--|:--|:--|
+| 16 | 2.2 | 2.2 | 2.5 | B | within-noise | measured | measured (+12.5%) |
+| 32 | 2.5 | 2.8 | 2.5 | B | **LOSS −12.6%** | measured | measured (−12.6%) |
+| 64 | 5.3 | 5.6 | 2.5 | B | LOSS −5.9% | measured | **LOSS (−125.5%)** |
+| 128 | 5.9 | 5.6 | 3.1 | B | WIN +5.6% | measured | **LOSS (−79.9%)** |
+| 256 | 7.1 | 6.8 | 3.7 | B | WIN +4.4% | measured | **LOSS (−83.3%)** |
+| 512 | 9.5 | 9.2 | 7.0 | B | WIN +3.3% | measured | **LOSS (−32.7%)** |
+| 1024 | 14.9 | 13.3 | 11.1 | B | WIN +10.5% | measured | measured (−19.7%) |
+| 4096 | 51.9 | 43.2 | 41.3 | B | WIN +16.9% | measured | measured (−4.5%) |
+| 16384 | 240.2 | 225.2 | 212.8 | B | WIN +6.2% | measured | measured (−5.9%) |
+| 65536 | 1262 | 1262 | 1252 | A | within-noise | measured | measured (−0.8%) |
+| 262144 | 5290 | 5270 | 5370 | B | within-noise | measured | measured (+1.9%) |
+| 1048576 | 24567 | 24066 | 26550 | B | WIN +2.0% | measured | measured (+9.4%) |
+| 4194304 | 123122 | 126078 | 127490 | B | LOSS −2.4% | measured | measured (+1.1%) |
+
+znver3:
+
+| size | avx2 | asm | glibc | tier | asm vs avx2 (rule 3) | tier verdict | asm vs glibc (d) |
+|--:|--:|--:|--:|:--|:--|:--|:--|
+| 16 | 2.5 | 2.5 | 2.5 | A | within-noise | measured | measured (+0.0%) |
+| 32 | 2.5 | 2.8 | 2.5 | A | **LOSS −12.6%** | **LOSS** (floor 5.0%) | **LOSS (−12.6%)** |
+| 64 | 5.9 | 5.3 | 2.5 | A | WIN +10.5% | **WIN** (floor 1.5%) | **LOSS (−113.0%)** |
+| 128 | 6.2 | 5.4 | 3.1 | A | WIN +12.6% | measured | **LOSS (−74.8%)** |
+| 256 | 7.7 | 6.5 | 3.7 | B | WIN +16.1% | measured | **LOSS (−74.9%)** |
+| 512 | 9.9 | 8.9 | 7.0 | B | WIN +9.5% | measured | **LOSS (−28.2%)** |
+| 1024 | 15.2 | 13.0 | 11.1 | B | WIN +14.4% | measured | measured (−16.9%) |
+| 4096 | 51.9 | 42.6 | 41.3 | B | WIN +18.1% | measured | measured (−3.0%) |
+| 16384 | 238.0 | 225.2 | 207.8 | B | WIN +5.4% | measured | measured (−8.4%) |
+| 65536 | 1262 | 1262 | 1252 | A | within-noise | measured | measured (−0.8%) |
+| 262144 | 5250 | 5280 | 5280 | B | within-noise | measured | measured (+0.0%) |
+| 1048576 | 24526 | 23665 | 25798 | B | WIN +3.5% | measured | measured (+8.3%) |
+| 4194304 | 120287 | 116500 | 119946 | B | WIN +3.2% | measured | measured (+2.9%) |
+
+v3:
+
+| size | avx2 | asm | glibc | tier | asm vs avx2 (rule 3) | tier verdict | asm vs glibc (d) |
+|--:|--:|--:|--:|:--|:--|:--|:--|
+| 16 | 2.2 | 2.2 | 2.5 | B | within-noise | measured | measured (+12.5%) |
+| 32 | 2.5 | 2.8 | 2.5 | B | **LOSS −12.6%** | measured | measured (−12.6%) |
+| 64 | 5.3 | 5.6 | 2.5 | B | LOSS −5.9% | measured | **LOSS (−125.5%)** |
+| 128 | 5.9 | 5.6 | 3.1 | B | WIN +5.3% | measured | **LOSS (−80.5%)** |
+| 256 | 7.1 | 6.8 | 3.7 | B | WIN +3.8% | measured | **LOSS (−84.3%)** |
+| 512 | 9.5 | 9.3 | 7.0 | B | WIN +2.4% | measured | **LOSS (−33.9%)** |
+| 1024 | 14.9 | 13.3 | 11.1 | B | WIN +10.5% | measured | measured (−19.7%) |
+| 4096 | 51.9 | 43.2 | 41.3 | B | WIN +16.9% | measured | measured (−4.5%) |
+| 16384 | 238.0 | 225.5 | 212.8 | B | WIN +5.3% | measured | measured (−6.0%) |
+| 65536 | 1262 | 1262 | 1262 | A | within-noise | measured | measured (+0.0%) |
+| 262144 | 5290 | 5260 | 5310 | B | within-noise | measured | measured (+0.9%) |
+| 1048576 | 23765 | 23955 | 26420 | B | within-noise (band LOSS) | measured | measured (+9.3%) |
+| 4194304 | 108364 | 119495 | 121229 | B | **LOSS −10.3%** | measured | measured (+1.4%) |
+
+Size-class medians (analyzer's own roll-up; W/L/N counts use the 1.5% floor):
+
+| class | znver2 vs avx2 | znver2 vs glibc | znver3 vs avx2 | znver3 vs glibc | v3 vs avx2 | v3 vs glibc |
+|:--|--:|--:|--:|--:|--:|--:|
+| tiny (<64 B) | −6.3% (0/1/1) | −0.0% | −6.5% (0/1/1) | −6.3% | −6.3% (0/1/1) | −0.0% |
+| small (64 B–4 KB) | +5.0% (5/1) | −56.3% (0/6) | +13.5% (6/0) | −51.5% (0/6) | +4.6% (5/1) | −57.2% (0/6) |
+| mid (4 KB–64 KB) | +3.1% (1/0/1) | −3.3% | +2.7% (1/0/1) | −4.6% | +2.6% (1/0/1) | −3.0% |
+| big (64 KB–1 MB) | +1.2% (1/0/1) | +5.6% | +1.5% (1/0/1) | +4.1% | −0.1% (0/0/2) | +5.1% |
+| huge (>1 MB) | −2.4% (0/1/0) | +1.1% | +3.2% (1/0/0) | +2.9% | −10.3% (0/1/0) | +1.4% |
+
+Tier A note: only **two rows in the whole campaign get a tier verdict against the
+previous rung at all** — znver3 32 B (LOSS) and znver3 64 B (WIN); against glibc
+the tier verdict is LOSS at 64 B–512 B and `measured` everywhere else. Every
+remaining vs-`avx2` row prints `measured`, i.e. the delta is inside that size's
+floor and is not a claim. Nothing in Tier B comes close to the 25% floor: the
+largest rule-3 win anywhere is +18.1%.
+
+## 6. Where asm beat the compiler, and where it lost (items 5 and 6)
+
+**Did asm beat the compiler? Yes at 128 B–16 KB by rule 3 (+2.4% to +18.1%,
+WIN at 18 of 18 size×target cells in that band — 6 sizes × 3 targets), no at
+< 64 B, and it is a wash from 256 KB up. None of those wins is promotable
+(Tier B, 25% floor).**
+
+* **32 B — LOSS −12.57%, identical on all three targets, and reproducible.**
+  This one has a named mechanism, not a guess: the rung is *required* to keep a
+  scalar-only < 64 B path, so at n = 32 it runs 8 × 8 B loads and 8 × 8 B stores,
+  while clang's C version copies the same 32 B with two `vmovups` (ymm) — four
+  memory operations against sixteen. The alternative (a 32 B `ymm` pair below
+  64 B) exists in the C rung and is not available to this one by definition.
+  This is the honest cost of the mandated design, and it is the rung's most
+  solid result: −12.6% at 32 B, −5.9% at 64 B on two of three targets.
+* **64 B — sign flip on byte-identical code.** For znver2 and znver3 the C
+  `memcpy_avx2.o` is the *same file* (md5 `d99162ba…`) and the asm `.o` is the
+  same file on all three targets, yet the same pair measured −5.88% (LOSS) on
+  znver2 and +10.54% (WIN) on znver3 four minutes apart. The 64 B deltas
+  therefore do not reproduce; they are inside this instrument's run-to-run
+  spread at that size, which is consistent with the rule-2 evidence in §5
+  (`UNSTABLE`, per-window spreads of 13–55% over 64 B–16 KB). I am not claiming
+  the 64 B WIN.
+* **128 B–16 KB — consistent direction, unreproducible magnitude.** The sign is
+  the same on all three targets (asm faster at every size in the band), but the
+  magnitude swings: 128 B +5.3/+5.6/+12.6%, 256 B +3.8/+4.4/+16.1%, 1 KB
+  +10.5/+10.5/+14.4%, 4 KB +16.9/+16.9/+18.1%. The same-target C baselines also
+  moved by up to 11% between the znver2 and znver3 campaigns despite identical
+  objects (avx2 at 64 B: 5.3 vs 5.9). The mechanism I *can* point at for the asm
+  side is real and visible in the diff — the aligned `vmovdqa` store path is
+  active on every harness call (buffers are 64 B aligned), so no store can split
+  a 64 B line, and the loads are grouped ahead of the stores; at 4 KB the whole
+  working set is L1-resident, which is why that is where the gap is widest. The
+  magnitude of the effect is not established by this instrument.
+* **> 1 MB — the one place the asm loses big, and I cannot attribute it.**
+  znver3 +3.2%, znver2 −2.4%, v3 −10.3% (Tier floor 25%, so all three are
+  `measured` at the tier level, but −10.3% clears rule 3). The obvious
+  hypothesis is prefetch distance — the asm prefetches +128 B while clang
+  prefetched +64 B (Kernel 4's own study picked +2 lines over +1 and +4, and
+  this rung inherited that answer rather than re-testing it) plus the aligned
+  store path's read-for-ownership behaviour on a streaming copy. **This
+  campaign does not isolate that variable, and I am not reporting the hypothesis
+  as a finding.** It is reported as an unexplained per-target divergence at
+  4 MiB.
+* **vs glibc: the rung loses outright in the small band.** The tier verdict
+  (the authoritative one) is LOSS at 64 B–512 B on every target, and the raw
+  ratio is a deficit at *every* size from 16 B to 16 KB: glibc 2.5 ns against
+  asm's 5.3–5.6 ns at 64 B (a 2.1–2.2× gap), 3.7 against 6.5–6.8 at 256 B, and
+  41.3 against 42.6–43.2 at 4 KB (3.0–4.5%). glibc's ifunc-selected path owns
+  that band outright; this rung is not in that fight. From 256 KB up the tables
+  turn (asm ahead by 9.4% at 1 MiB on znver2, 8.3% on znver3, 9.3% on v3), but
+  those rows are Tier B and every one of them is `measured`, not a claim.
+
+## 7. Surprises (item 7)
+
+1. **The hand-written object is byte-identical across all three targets** (one
+   md5), while the C rungs next to it are not. Kernel 5's rung compiled to three
+   different instruction sets; Kernel 4's compiled identically on znver2/znver3
+   and differently on v3. This is the first rung in the ladder where "same
+   binary, different numbers" is guaranteed by construction rather than
+   established by a diff — which is exactly what made the 64 B sign flip (§6)
+   legible instead of explainable away.
+2. **The compiler's code is smaller than the hand-written code** (121 vs 155
+   instructions, 460 vs 617 B) and still loses in the 128 B–16 KB band. More
+   instructions is the price of the aligned-store split; the reward is that the
+   aligned store cannot split a cache line.
+3. **asm loses at 32 B by exactly the same −12.57% on all three targets**, i.e.
+   the rung's one clear loss is also its most reproducible result. Consistency
+   cut the other way from the wins, and that is worth recording as it stands.
+4. **clang emits 7 `vzeroupper`s (one per return) and the asm emits 1**, which
+   should favour the asm on the < 64 B path — and does not, because on that path
+   the asm never enters a vector register at all and so has nothing to clean up.
+   The vector-state discipline was not the bottleneck at the sizes where it
+   could have shown.
+
+## 8. Is this rung a promotion candidate over C AVX2? (item 8)
+
+**No.** The rule-3 wins live in sizes the ratified model classes as Tier B
+(25% floor) and none clears it: the best is +18.1%. The only tier-confirmed
+verdicts against the previous rung in the whole campaign are znver3 32 B LOSS
+and znver3 64 B WIN, and the 64 B one flips sign on byte-identical objects
+between two of the three campaigns, so it cannot carry a promotion. Against
+glibc this rung loses in the 64 B–512 B band and never beats it below 16 KB. And
+at 4 MiB it loses on two of three targets with a cause this campaign does not
+isolate.
+
+The honest summary of the asm experiment is: **hand-writing the loop did beat
+the compiler inside the L1/L2 band on all three targets at the rule-3 floor, and
+it lost to the compiler at 32 B; but neither result survives the project's own
+claim model, and no threshold or tuning was applied after the fact to change
+that.** No selection code was written; rung 6 stays in the registry as a
+measured rung, alongside the AVX2 C rung it did not displace.
+
+## 9. Artifacts and limitations
+
+* `results/committed/phase2_asm_{znver2,znver3,v3}.csv` — frozen (24 snapshots
+  total, 0 refused; each cmp-identical to the working CSV).
+* `results/phase2_asm_analysis.txt` — gate proof, instrument, per-target
+  analyzer output, assembled-rung census and object identity, and the codegen-diff
+  headers; regenerated by `scripts/phase2_k6_report.sh` (every number printed by
+  awk from a log, a CSV or an object file, or by the gate itself).
+* `results/codegen_diff_asm_vs_avx2_c_{znver2,znver3,v3}.diff` — the asm-vs-C
+  comparison (item 8), non-empty, multiset verdict on every one;
+  `results/codegen_diff_asm_<a>_vs_<b>.diff` — the target-vs-target check that
+  returns IDENTICAL.
+* `scripts/phase2_k6_campaign.sh` (the campaign driver) and
+  `scripts/codegen_diff_asm_vs_c.sh` (the two-kernels-one-target diff), both in
+  the repo; raw campaign logs are gitignored by project policy but
+  self-describing (impls, sizes, reps, pin, windows, iters, budget, gate line).
+* Limitations: the 64 B and 128 B–16 KB deltas are magnitude-unstable within
+  this instrument and only their direction is reported; the 4 MiB divergence has
+  no measured cause; the per-target C baselines are not the same binary for v3,
+  so cross-target rows are per-target findings, not a hardware comparison; p99
+  recorded, used for nothing; below-64 B behaviour is defined by the rung's
+  scalar-path requirement and is priced, not tuned.
