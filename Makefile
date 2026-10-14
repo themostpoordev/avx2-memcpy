@@ -69,7 +69,7 @@ ifeq ($(filter $(TARGET),$(TARGETS)),)
 $(error TARGET must be one of: $(TARGETS))
 endif
 
-.PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot ntprobe \
+.PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot ntprobe routecheck \
         $(addprefix ntprobe-,$(TARGETS))
 
 all: $(BINS)
@@ -83,7 +83,7 @@ build/$(1)/%.o: %.c
 	$$(CC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
 	  -DTARGET_NAME='"$(1)"' $$(if $$(filter $$<,$$(SCALAR_SRCS)),$$(SCALAR_FLAGS),) \
 	  $$(if $$(filter $$<,$$(SSE2_SRCS)),$$(SSE2_FLAGS),) \
-	  -MMD -MP -c $$< -o $$@
+	  -DROUTING_TARGET_NAME=$(1) -MMD -MP -c $$< -o $$@
 
 # Assembly rung: same per-target -march/-mavx2 flags, so the integrated assembler
 # accepts the AVX2 it is told to use. -std/-fno-builtin are C concepts and are
@@ -182,13 +182,21 @@ endef
 $(foreach t,$(TARGETS),$(eval $(call NTPROBE_TARGET,$(t))))
 ntprobe: $(addprefix ntprobe-,$(TARGETS))
 
+# ---- Phase 2.5: hybrid routing-table verification -------------------------
+# Links tools/route_check.c against the built src objects (so it checks the
+# shipped table, not a recompile) and walks every size from 0 to 8 MiB plus each
+# class boundary +-1, comparing the compiled class mapping with the Phase 2.5
+# routing rules and the per-class copies against memcpy_ref. No clock is read.
+routecheck: $(BINS)
+	@sh scripts/hybrid_route_check.sh
+
 # ---- committed CSV snapshots (frozen record of finalized kernels) ----------
 # results/*.csv is gitignored (rewritten every run). A kernel that has passed
 # verify and completed its benchmark is copied into results/committed/, which IS
 # tracked. A snapshot that already exists is FROZEN: this target refuses to
 # overwrite one that differs from the current run, because a record that
 # silently changes is not a record. Same data re-copied is a no-op.
-SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt asm
+SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt asm hybrid
 # NOTE on the quoting below - both of these were bugs in the first version:
 #   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
 #     `impl_` (underscore is an identifier character) followed by `$t`, so every

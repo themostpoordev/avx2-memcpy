@@ -52,6 +52,13 @@ const impl_t g_impls[] = {
     { "asm", memcpy_asm, NULL,
       "kernel 6: hand-written AVX2 assembly (src/memcpy_asm.S), 32B aligned store path (vmovdqa) + unaligned path (vmovdqu), scalar <64B" },
 
+    /* Phase 2.5: not a seventh ladder rung - a dispatcher over rungs 1-6. It
+     * copies nothing itself; it routes each size to the rung that measured
+     * fastest at that size (src/routing_table.h, generated from the Kernel 6
+     * campaign's min_of_mins). glibc is never a routing target. */
+    { "hybrid", memcpy_hybrid, NULL,
+      "phase 2.5: size+target routing over rungs 1-6, table generated from measured min_of_mins" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
     { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },

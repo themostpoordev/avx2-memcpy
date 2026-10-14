@@ -47,4 +47,11 @@ void *memcpy_avx2_pf4(void *dst, const void *src, size_t n); /* kernel 4, prefet
 void *memcpy_avx2_nt(void *dst, const void *src, size_t n);  /* kernel 5, non-temporal stores */
 void *memcpy_asm(void *dst, const void *src, size_t n);      /* kernel 6, hand-written AVX2 asm */
 
+/* --- Phase 2.5: hybrid dispatcher ----------------------------------------
+ * Routes each call to the rung that measured fastest at that size, per target.
+ * The table is generated data (src/routing_table.h, from
+ * scripts/gen_routing_table.sh); this rung contains no copy loop of its own.
+ */
+void *memcpy_hybrid(void *dst, const void *src, size_t n);
+
 #endif /* AVX2_MEM_COMMON_H */

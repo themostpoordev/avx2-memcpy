@@ -61,7 +61,39 @@ declared_bits() {
                                                                     echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
+        memcpy_hybrid.c)                                            echo 256 ;;
         *)                                                          echo ""  ;;
+    esac
+}
+
+# ---- dispatcher TUs (Phase 2.5) -------------------------------------------
+# A dispatcher is a rung that contains NO data movement of its own: it classifies
+# a size, indexes a generated table and tail-calls another rung. Comparing its
+# "widest access" with a declared width would be meaningless both ways — it has no
+# copying access to find, and its declared width is not a property of its own code
+# but the maximum width of the rungs it routes to. So the gate checks the three
+# things that ARE properties of the object:
+#   (a) no vector data movement of its own (its widest access must be <= 64 bits,
+#       i.e. pointer loads only);
+#   (b) every undefined symbol in the object must be a rung entry point that this
+#       same gate width-checks — so a dispatcher cannot smuggle in a wide access by
+#       calling something the ladder does not gate;
+#   (c) the declared width must EQUAL the maximum declared width of the rungs the
+#       object actually references (256 = max(8,64,128,256)), not merely be larger.
+# Nothing here is auto-approved and nothing is skipped quietly: every dispatcher
+# prints its own line with the routed set and the widths involved.
+DISPATCHER_SRCS="memcpy_hybrid.c"
+
+# rung symbol -> declared width of the TU that defines it
+rung_symbol_bits() {
+    case "$1" in
+        memcpy_naive)              echo 8   ;;
+        memcpy_word)               echo 64  ;;
+        memcpy_sse2)               echo 128 ;;
+        memcpy_avx2)               echo 256 ;;
+        memcpy_avx2_nt)            echo 256 ;;
+        memcpy_asm)                echo 256 ;;
+        *)                         echo ""  ;;
     esac
 }
 
@@ -226,7 +258,9 @@ fi
 
 # ---- the gate -------------------------------------------------------------
 echo "audit_width: widest data-movement access per kernel TU vs declared ladder width"
-echo "  declarations: naive/ref_scalar 8, word 64, sse2 128, avx2* 256, asm 256; overrides from $ALLOW"
+echo "  declarations: naive/ref_scalar 8, word 64, sse2 128, avx2* 256, asm 256,"
+echo "                hybrid 256 (dispatcher: must equal the max width of the rungs it routes to);"
+echo "                overrides from $ALLOW"
 fail=0
 for t in znver2 znver3 v3; do
     echo "--- target $t"
@@ -242,6 +276,36 @@ for t in znver2 znver3 v3; do
             printf '  %-34s NO DECLARED WIDTH for this source - add a row to declared_bits() or %s\n' "$base" "$ALLOW"
             fail=1; continue
         fi
+        # ---- dispatcher rule (a)(b)(c), see the block above ----------------
+        case " $DISPATCHER_SRCS " in
+        *" $base "*)
+            res=$(widest_of "$obj"); got=${res%%|*}; ins=${res#*|}
+            undef=$(nm -u "$obj" 2>/dev/null | awk '{ print $NF }' | sort -u | tr '\n' ' ')
+            maxb=0; badtarget=""
+            for sym in $undef; do
+                sb=$(rung_symbol_bits "$sym")
+                if [ -z "$sb" ]; then badtarget="$badtarget $sym"; continue; fi
+                [ "$sb" -gt "$maxb" ] && maxb="$sb"
+            done
+            if [ "$got" != "NONE" ] && [ "$got" != "UNCLASSIFIED" ] && [ "$got" -gt 64 ]; then
+                printf '  %-34s DISPATCHER declares %s but its own widest access is %s bits (%s) - a dispatcher must not copy\n' \
+                    "$base" "$dec" "$got" "$ins"
+                fail=1; continue
+            fi
+            if [ -n "$badtarget" ]; then
+                printf '  %-34s DISPATCHER references symbol(s) that are not width-gated rungs:%s\n' "$base" "$badtarget"
+                fail=1; continue
+            fi
+            if [ "$maxb" != "$dec" ]; then
+                printf '  %-34s DISPATCHER declares %s but routes to rungs whose maximum declared width is %s - the declaration must equal the widest thing it can reach\n' \
+                    "$base" "$dec" "$maxb"
+                fail=1; continue
+            fi
+            printf '  %-34s DISPATCHER declared %-4s = max width of the %s gated rung(s) it references%s; own widest access %s (%s)\n' \
+                "$base" "$dec" "$(printf '%s' "$undef" | wc -w | tr -d ' ')" "$mark" "$got" "$ins"
+            continue
+            ;;
+        esac
         res=$(widest_of "$obj")
         got=${res%%|*}; ins=${res#*|}
         if [ "$got" = "UNCLASSIFIED" ]; then
