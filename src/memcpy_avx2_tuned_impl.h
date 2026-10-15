@@ -58,6 +58,14 @@
 #ifndef TUNED_SMALL_AVX
 #error "define TUNED_SMALL_AVX"
 #endif
+/* Optional: only prefetch at or above this size (V5, take 2). 0 = always. The
+ * first V5 attempt used one distance per size class and lost at 4 MiB to a flat
+ * +128 B (see the report); the screening data also showed prefetch HURTING at
+ * 4 KB (41.9 ns without it, 47.6 ns with). So the knob that matters is not the
+ * distance but whether to prefetch at all, and the answer is size-dependent. */
+#ifndef TUNED_PF_MIN
+#define TUNED_PF_MIN 0
+#endif
 
 #include <immintrin.h>
 #include <stdint.h>
@@ -79,7 +87,29 @@
         _mm_storeu_si128((__m128i *)(d + (off)), v_);                         \
     } while (0)
 
-/* a flat block pair: [0,cnt*32) then [n-cnt*32,n) */
+/* A flat block pair: H = cnt*32 bytes at each end, [0,H) then [n-H,n).
+ *
+ * The class windows are (H, 2H], so the two blocks cover [0,n) because the
+ * second one starts at n-H <= H. Choosing H as the class's LOWER bound is what
+ * makes this cheap at the sizes that matter: at n = 2H the two blocks tile [0,n)
+ * exactly, with no byte copied twice and no more moves than the copy needs. The
+ * ladder sizes (32, 64, 128, 256, 512 B) are all 2H of their class, so they are
+ * the zero-redundancy points.
+ *
+ * Two earlier versions of this block were wrong in opposite directions, which is
+ * why the comment is long:
+ *   - v1 used H = the class UPPER bound at both ends, i.e. it copied 2H bytes for
+ *     every n in [H,2H): correct, but 2x the bytes at n = H. The screening
+ *     campaign priced that at 64-512 B (+10%..+57% behind glibc) where the move
+ *     count, not the bytes, sets the time.
+ *   - v2 halved H but kept the window, leaving sizes above the midpoint with an
+ *     uncovered gap (n = 300 -> [0,128) + [172,300) misses [128,172)).
+ *     `--verify` failed on all 21 rung x target combinations immediately, which
+ *     is the cheapest possible way to learn it: the check walks n = 0..4096 with
+ *     random offsets, so a gap inside any class cannot hide.
+ *   - v3 (this one) keeps the windows and restores H to the lower bound, so the
+ *     coverage inequality n <= 2H holds by construction and the redundancy is
+ *     zero at the top of each class. */
 #define T_BLOCKPAIR(cnt)                                                     \
     do {                                                                     \
         for (size_t k_ = 0; k_ < (size_t)(cnt); k_++)                        \
@@ -94,18 +124,18 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
     const unsigned char *s = (const unsigned char *)src;
 
     /* ---------------- flat classes: no loop, no tail branch -------------- */
-    if (n < 512) {
-        if (n >= 256)      { T_BLOCKPAIR(8); }
-        else if (n >= 128) { T_BLOCKPAIR(4); }
-        else if (n >= 64)  { T_BLOCKPAIR(2); }
+    if (n <= 512) {
+        if (n > 256)       { T_BLOCKPAIR(8); }          /* H = 256, exact at 512  */
+        else if (n > 128)  { T_BLOCKPAIR(4); }          /* H = 128, exact at 256  */
+        else if (n > 64)   { T_BLOCKPAIR(2); }          /* H =  64, exact at 128  */
 #if TUNED_SMALL_AVX
-        else if (n >= 32)  { T_BLOCKPAIR(1); }          /* 2 x 32 B overlapping  */
+        else if (n > 32)   { T_BLOCKPAIR(1); }          /* H =  32, exact at 64   */
 #else
-        else if (n >= 32)  {                            /* 4 x 16 B (kernel 4)    */
+        else if (n > 32)   {                            /* 4 x 16 B (kernel 4)    */
             T_MOVE16(0); T_MOVE16(16); T_MOVE16(n - 32); T_MOVE16(n - 16);
         }
 #endif
-        else if (n >= 16)  { T_MOVE16(0); T_MOVE16(n - 16); }
+        else if (n > 16)   { T_MOVE16(0); T_MOVE16(n - 16); }   /* H = 16, exact at 32 */
         else if (n >= 8)   {
             uint64_t a, b;
             __builtin_memcpy(&a, s, 8); __builtin_memcpy(&b, s + n - 8, 8);
@@ -146,7 +176,7 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
      * is the same loop with unaligned accesses. */
     if ((((uintptr_t)s | (uintptr_t)d) & 31u) == 0u) {
         for (; i + TUNED_BLOCK <= n; i += TUNED_BLOCK) {
-            if (pf) {
+            if (pf && n >= (size_t)TUNED_PF_MIN) {
                 _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
                 _mm_prefetch((const char *)(d + i + pf), _MM_HINT_T0);
             }
@@ -159,7 +189,7 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
 #endif
     {
         for (; i + TUNED_BLOCK <= n; i += TUNED_BLOCK) {
-            if (pf) {
+            if (pf && n >= (size_t)TUNED_PF_MIN) {
                 _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
                 _mm_prefetch((const char *)(d + i + pf), _MM_HINT_T0);
             }
@@ -170,12 +200,19 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
         }
     }
 
-    /* V8: the tail is one overlapping block, not a cascade. n - TUNED_BLOCK is a
-     * multiple of nothing in particular - it is simply where the last full block
-     * starts, and the loop guaranteed n - i < TUNED_BLOCK, so [n-BLOCK, n)
-     * covers [i, n). */
-    for (size_t k = 0; k < (size_t)TUNED_UNROLL; k++)
-        T_MOVE32(n - TUNED_BLOCK + k * 32);
+    /* V8: the tail is one overlapping block, not a cascade. n - TUNED_BLOCK is
+     * simply where the last full block starts, and the loop guaranteed
+     * n - i < TUNED_BLOCK, so [n-BLOCK, n) covers [i, n).
+     *
+     * The `if (i < n)` is worth its branch: when the size is a whole number of
+     * blocks (every power-of-two ladder size with unroll 4/8/16) the remainder is
+     * zero and the overlap block would copy up to 512 B that the loop has already
+     * copied - 25% of a 2 KB copy, 12% of a 4 KB copy. The branch is 100%
+     * predicted in the iters loop (the size is constant per case), so it costs a
+     * uop and saves a whole block of stores. */
+    if (i < n)
+        for (size_t k = 0; k < (size_t)TUNED_UNROLL; k++)
+            T_MOVE32(n - TUNED_BLOCK + k * 32);
 
     return dst;
 }

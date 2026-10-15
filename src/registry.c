@@ -77,6 +77,8 @@ const impl_t g_impls[] = {
       "V5: tuned body, unroll 8, aligned path, fixed prefetch +128 B" },
     { "avx2_t8alp", memcpy_avx2_t8alp, NULL,
       "V5: tuned body, unroll 8, aligned path, per-class prefetch (+128/+256/+512/+1024)" },
+    { "avx2_t4pf", memcpy_avx2_t4pf, NULL,
+      "V5b: tuned body, unroll 4, aligned path, +128 B prefetch only at 64 KB and up" },
 
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },

@@ -66,5 +66,6 @@ void *memcpy_avx2_t12(void *dst, const void *src, size_t n);   /* V4, unroll 12 
 void *memcpy_avx2_t8al(void *dst, const void *src, size_t n);  /* V3, unroll 8 + aligned stores */
 void *memcpy_avx2_t8ap(void *dst, const void *src, size_t n);  /* V5, + fixed prefetch 128 B */
 void *memcpy_avx2_t8alp(void *dst, const void *src, size_t n); /* V5, + per-class prefetch */
+void *memcpy_avx2_t4pf(void *dst, const void *src, size_t n);  /* V5b, + prefetch gated at 64 KB */
 
 #endif /* AVX2_MEM_COMMON_H */

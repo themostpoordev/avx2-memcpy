@@ -64,6 +64,7 @@ declared_bits() {
         memcpy_avx2_gcc.c|memcpy_avx2_t4.c|memcpy_avx2_t8.c|memcpy_avx2_t12.c) \
                                                                     echo 256 ;;
         memcpy_avx2_t8al.c|memcpy_avx2_t8ap.c|memcpy_avx2_t8alp.c)   echo 256 ;;
+        memcpy_avx2_t4pf.c)                                         echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;
