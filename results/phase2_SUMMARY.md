@@ -1247,3 +1247,323 @@ measured rung, alongside the AVX2 C rung it did not displace.
   so cross-target rows are per-target findings, not a hardware comparison; p99
   recorded, used for nothing; below-64 B behaviour is defined by the rung's
   scalar-path requirement and is priced, not tuned.
+
+# Phase 2.5 — hybrid dispatcher (`memcpy_hybrid`), the detour before Kernel 7
+
+The premise this phase exists to test: **glibc does not win because one of its
+kernels beats ours — it wins because it dispatches among several per size.**
+After Kernel 6 the project had six rungs and per-size `min_of_mins` for all of
+them on all three targets, and had never tried that strategy. So Phase 2.5 is one
+kernel that routes each call to the best rung for its size, with the routing
+table *generated from frozen measurements* rather than picked by hand. It is a
+detour, not a replacement: Kernels 7 and 8 still follow.
+
+## 0. What was built, and the one place the request was not met
+
+`src/memcpy_hybrid.c` (the dispatcher), `src/routing_table.h` (generated, "DO
+NOT EDIT"), `scripts/gen_routing_table.sh` (generates it from the Kernel 6
+campaign), `tools/route_check.c` + `scripts/hybrid_route_check.sh` (verification
+against the *built object*), plus a `routecheck` target and a dispatcher rule in
+`scripts/audit_width.sh`. `memcpy_hybrid` is declared in `src/common.h` and
+registered in `src/registry.c` like every other rung.
+
+The dispatcher routes on **size only**. The request's rationale mentioned
+"(and where applicable, its alignment)": no rung in the ladder is
+alignment-specialised, the campaign measures one offset configuration, and an
+alignment axis would need its own campaign to produce a table — so it is not in
+the table, and that is a stated limitation (§9), not an oversight. The standard
+rungs are alignment-agnostic by contract (unaligned vector loads, scalar small
+paths), and the canary/verify suite is what checks that.
+
+## 1. The gate passed (item 1)
+
+`make -s gate` **rc=0**: `make audit` rc=0 (the scalar TUs still hold zero vector
+instructions) and `make audit-width` rc=0 with `audit_width: PASS`. The new rule
+is reported as its own kind of row, once per target:
+
+```
+memcpy_hybrid.c   DISPATCHER declared 256 = max width of the 4 gated rung(s) it references;
+                  own widest access 64 (mov (%rcx,%rax,8),%rax)
+```
+
+(3 gated rungs on v3 — its table references `avx2`, `sse2`, `asm`.) The declared
+256 is required *because* the rung forwards to rungs that move 256-bit vectors;
+the dispatcher's own widest access is 64-bit, i.e. it moves no data, and the rule
+runs the reference walk to prove it references only gated rungs. `make gate`
+itself is `audit + audit-width`; `make routecheck` is the separate target run
+below, and each campaign log carries the gate line before window 1:
+`# gate: make audit PASSED and make audit-width PASSED (rc=0) before window 1`.
+
+## 2. Instrument (item 2)
+
+`scripts/phase2_hybrid_campaign.sh`: 9 impls (`naive word glibc ref_scalar sse2
+avx2 avx2_nt asm hybrid`), **17 sizes** — the standing 13-point ladder plus four
+in-between sizes (100 B, 1000, 20000, 300000) so the classes have witnesses that
+are *not* their own boundaries — 5 reps × 9 windows, `taskset -c 2`, `iters=4000`,
+`budget=0.05`, `warmup=2`, `RUN_TO_CAP=1`, min_of_mins primary. Per target: 8415
+rep lines, **0 migrated**, every line `cpu=2`. All three targets ran back-to-back
+in one session (18:32:35–18:49:34), so there is no day boundary inside this
+campaign. As in Kernel 6, the extra rep lines for `glibc`/`ref_scalar` are their
+memset cases; the analyzer filters `op=memcpy`, so no comparison uses them.
+
+Tier coverage is the first thing to read about this phase: **Tier A only 5 of 17
+sizes on znver2, 5 on znver3, 8 on v3.** Most of this campaign's cells are Tier B
+(per-window spread > 10%, 25% floor) and therefore carry `measured`, not a claim —
+including nearly every tiny-size cell, where the copy is a handful of
+instructions and the per-window spread at 32 B reaches 59.93%.
+
+## 3. The routing table (item 3)
+
+Generated, per target, from the **Kernel 6 campaign log** — the only dataset that
+measured all six ladder rungs plus glibc in one window set. Sizes between two
+measured points take the lower point's winner (conservative); n < 16 takes the
+16 B winner; n > 4 MiB takes the 4 MiB winner. The requested class list went to
+256 MiB; the truth is that **only 16 B–4 MiB were ever measured by a Phase 2
+`min_of_mins` campaign** — the only rows at 16/64/256 MiB anywhere in `results/`
+are Phase 1 smoke runs and one legacy `*.median_based.csv` (which `make snapshot`
+does not even track), neither of them a same-window comparison. So the table stops
+at 4 MiB and states the clamp, instead of inventing a winner for sizes no rung has
+been measured at.
+
+| size | znver2 | znver3 | v3 |
+|--:|:--|:--|:--|
+| 16 | avx2 | avx2_nt | avx2 |
+| 32 | avx2 | avx2 | avx2 |
+| 64 | sse2 | sse2 | sse2 |
+| 128 | sse2 | sse2 | sse2 |
+| 256 | sse2 | sse2 | sse2 |
+| 512 | avx2_nt | asm | asm |
+| 1024 | asm | asm | asm |
+| 4096 | asm | asm | asm |
+| 16384 | asm | asm | asm |
+| 65536 | avx2 | avx2 | avx2 |
+| 262144 | asm | avx2 | asm |
+| 1048576 | asm | asm | avx2 |
+| 4194304 | avx2 | asm | avx2 |
+
+Routed rungs: `naive word sse2 avx2 avx2_nt asm`. **Never routed to** (excluded,
+and the provenance prints what they would have won so the cost of the exclusion
+is visible): `ref_scalar` (the golden reference, not a rung), `glibc` (the
+baseline being chased), `avx2_pf2`/`avx2_pf4` (prefetch variants of a rung that
+already lost, and never measured together with `asm` — routing to them would need
+the cross-campaign mixing the generator refuses).
+
+The generator cross-checks a second source (the union of frozen committed CSVs)
+but does not decide with it, and prints every disagreement: **5 of 39 cells**. The
+reason is in the file — glibc's 4 MiB row across the nine frozen CSVs spans
+116990–131739 ns on one unchanged binary. Two further honesty features:
+`scripts/gen_routing_table.sh` validates its own extractor against the three
+rungs a frozen same-campaign CSV shares with it (max |frozen − extracted| =
+0.0500 ns, i.e. the CSV's own rounding), and it labels every class **decided** or
+**coin-flip** (winner margin ≤ null band). Coin-flips: **4 of 13 classes on
+znver2, 6 on znver3, 4 on v3** — one of them is the 16 B class the dispatcher
+pays the most for (§5). The lookup is `routing_small[n >> 4]` below 4096 (one
+load, generated from the same 13 bounds) and a bounded walk above it; both are
+re-derived exhaustively from the built object by `tools/route_check.c`, so the
+mapping in the evidence is the binary's, not the source's.
+
+## 4. Standing report — 9-point `min_of_mins` per size (items 2 and 4)
+
+ns; `routed` is the class winner the generated table sends that size to, `tier`
+is the hybrid row's tier, `hybrid vs asm` is rule 3 (1.5% floor) against the
+strongest single rung, and the last two columns are the analyzer's own tier
+verdicts (`tier_verdict_vs_prev`, `tier_verdict_vs_glibc`) with its raw glibc
+delta beside them — read from the frozen CSVs, nothing typed in.
+
+znver2:
+
+| size | routed | asm | hybrid | glibc | tier | hybrid vs asm (rule 3) | tier verdict vs asm | tier verdict vs glibc (d) |
+|--:|:--|--:|--:|--:|:--|:--|:--|:--|
+| 16 | avx2 | 2.2 | 2.5 | 2.8 | B | LOSS | measured | measured (+11.17%) |
+| 32 | avx2 | 2.8 | 2.8 | 2.5 | B | within-noise | measured | measured (−12.57%) |
+| 64 | sse2 | 5.9 | 3.4 | 2.5 | B | **WIN** | **WIN** | **LOSS (−37.67%)** |
+| 100 | sse2 | 5.9 | 5.3 | 3.1 | A | **WIN** | **WIN** | **LOSS (−70.14%)** |
+| 128 | sse2 | 5.9 | 4.0 | 3.1 | A | **WIN** | **WIN** | **LOSS (−30.13%)** |
+| 256 | sse2 | 7.1 | 5.9 | 3.7 | B | WIN | measured | **LOSS (−58.99%)** |
+| 512 | avx2_nt | 9.5 | 9.2 | 7.0 | B | WIN | measured | **LOSS (−32.66%)** |
+| 1000 | avx2_nt | 12.9 | 14.0 | 11.1 | B | LOSS | measured | **LOSS (−26.49%)** |
+| 1024 | asm | 13.6 | 13.6 | 11.1 | B | within-noise | measured | measured (−22.50%) |
+| 4096 | asm | 43.2 | 43.2 | 41.3 | B | within-noise | measured | measured (−4.54%) |
+| 16384 | asm | 222.8 | 225.2 | 208.0 | B | within-noise | measured | measured (−8.29%) |
+| 20000 | asm | 364.0 | 370.7 | 360.7 | A | LOSS | **LOSS** | **LOSS (−2.77%)** |
+| 65536 | avx2 | 1262.0 | 1262.0 | 1252.0 | A | within-noise | measured | measured (−0.80%) |
+| 262144 | asm | 5320.0 | 5270.0 | 5330.0 | A | within-noise | measured | measured (+1.13%) |
+| 300000 | asm | 6052.0 | 6041.0 | 6122.0 | B | within-noise | measured | measured (+1.32%) |
+| 1048576 | asm | 23004.0 | 23164.0 | 25539.0 | B | within-noise | measured | measured (+9.30%) |
+| 4194304 | avx2 | 121039.0 | 120047.0 | 118203.0 | B | within-noise | measured | measured (−1.56%) |
+
+znver3:
+
+| size | routed | asm | hybrid | glibc | tier | hybrid vs asm (rule 3) | tier verdict vs asm | tier verdict vs glibc (d) |
+|--:|:--|--:|--:|--:|:--|:--|:--|:--|
+| 16 | avx2_nt | 2.5 | 2.8 | 2.5 | A | LOSS | **LOSS** | **LOSS (−12.57%)** |
+| 32 | avx2 | 2.8 | 3.0 | 2.5 | B | LOSS | measured | measured (−18.84%) |
+| 64 | sse2 | 5.0 | 3.7 | 2.5 | A | **WIN** | **WIN** | **LOSS (−50.24%)** |
+| 100 | sse2 | 4.8 | 4.7 | 3.1 | B | WIN | measured | **LOSS (−50.02%)** |
+| 128 | sse2 | 5.6 | 4.7 | 3.1 | B | WIN | measured | **LOSS (−50.28%)** |
+| 256 | sse2 | 6.8 | 6.5 | 3.7 | B | WIN | measured | **LOSS (−75.92%)** |
+| 512 | asm | 8.9 | 9.5 | 7.0 | B | LOSS | measured | **LOSS (−37.15%)** |
+| 1000 | asm | 11.7 | 12.0 | 11.1 | B | LOSS | measured | measured (−8.32%) |
+| 1024 | asm | 13.0 | 13.3 | 11.1 | B | LOSS | measured | measured (−19.69%) |
+| 4096 | asm | 43.2 | 43.2 | 41.3 | B | within-noise | measured | measured (−4.54%) |
+| 16384 | asm | 223.0 | 225.2 | 207.8 | B | within-noise | measured | measured (−8.42%) |
+| 20000 | asm | 367.3 | 370.7 | 360.7 | A | within-noise | measured | **LOSS (−2.77%)** |
+| 65536 | avx2 | 1253.0 | 1262.0 | 1262.0 | A | within-noise | measured | measured (+0.00%) |
+| 262144 | avx2 | 5270.0 | 5260.0 | 5290.0 | B | within-noise | measured | measured (+0.57%) |
+| 300000 | avx2 | 6332.0 | 6081.0 | 6483.0 | A | **WIN** | **WIN** | **WIN (+6.20%)** |
+| 1048576 | asm | 23645.0 | 23635.0 | 25709.0 | B | within-noise | measured | measured (+8.07%) |
+| 4194304 | asm | 121980.0 | 121099.0 | 121870.0 | B | within-noise | measured | measured (+0.63%) |
+
+v3:
+
+| size | routed | asm | hybrid | glibc | tier | hybrid vs asm (rule 3) | tier verdict vs asm | tier verdict vs glibc (d) |
+|--:|:--|--:|--:|--:|:--|:--|:--|:--|
+| 16 | avx2 | 2.2 | 2.5 | 2.8 | A | LOSS | **LOSS** | **WIN (+10.86%)** |
+| 32 | avx2 | 2.8 | 2.8 | 2.5 | A | within-noise | measured | **LOSS (−12.57%)** |
+| 64 | sse2 | 5.9 | 3.4 | 2.5 | A | **WIN** | **WIN** | **LOSS (−37.67%)** |
+| 100 | sse2 | 5.9 | 5.0 | 3.1 | A | **WIN** | **WIN** | **LOSS (−60.35%)** |
+| 128 | sse2 | 5.9 | 4.4 | 3.1 | A | **WIN** | **WIN** | **LOSS (−40.24%)** |
+| 256 | sse2 | 7.1 | 5.9 | 3.7 | B | WIN | measured | **LOSS (−58.99%)** |
+| 512 | asm | 9.5 | 9.9 | 7.0 | B | LOSS | measured | **LOSS (−41.64%)** |
+| 1000 | asm | 12.9 | 13.2 | 11.1 | B | LOSS | measured | measured (−19.42%) |
+| 1024 | asm | 13.6 | 13.6 | 11.1 | A | within-noise | measured | **LOSS (−22.50%)** |
+| 4096 | asm | 43.2 | 43.2 | 41.3 | B | within-noise | measured | measured (−4.54%) |
+| 16384 | asm | 222.8 | 225.5 | 210.2 | B | within-noise | measured | measured (−7.25%) |
+| 20000 | asm | 367.3 | 367.3 | 360.7 | A | within-noise | measured | **LOSS (−1.85%)** |
+| 65536 | avx2 | 1262.0 | 1262.0 | 1252.0 | A | within-noise | measured | measured (−0.80%) |
+| 262144 | asm | 5240.0 | 5240.0 | 5250.0 | B | within-noise | measured | measured (+0.19%) |
+| 300000 | asm | 6071.0 | 6101.0 | 6292.0 | B | within-noise | measured | measured (+3.04%) |
+| 1048576 | avx2 | 23004.0 | 23334.0 | 26289.0 | B | within-noise | measured | measured (+11.24%) |
+| 4194304 | avx2 | 110478.0 | 108946.0 | 122671.0 | B | within-noise | measured | measured (+11.19%) |
+
+The tables are also in `results/phase2_hybrid_analysis.txt` §5b with the raw and
+band verdicts; §4 there is the analyzer's per-size and per-class output.
+
+## 5. Where the hybrid beats glibc, loses, and cannot be resolved (item 5)
+
+Counted over the 51 cells (17 sizes × 3 targets), using the sanctioned tier
+verdicts — **2 wins to glibc, 22 losses, 27 unresolvable**:
+
+* **Beats glibc (tier-confirmed):** znver3 **300 KB +6.20%** (Tier A, floor
+  1.5%), v3 **16 B +10.86%** (Tier A, floor 9.5% — the band is doing the work
+  there). Two cells out of fifty-one.
+* **Loses to glibc (tier-confirmed):** the whole **64 B–20 KB band**, on all
+  three targets — znver2 64 B/100/128/256/512/1000/20000, znver3
+  16/64/100/128/256/512/20000, v3 32/64/100/128/256/512/1024/20000. The
+  magnitudes are not marginal: 64 B–512 B cells are −30% to −75.92%, 1024 B on
+  v3 is −22.50%, 16 B/32 B on znver3/v3 are −12.57%, and only the three 20000 B
+  cells sit inside 3% (−2.77%, −2.77%, −1.85%). This is not new information
+  from this phase; what is new is that **optimal dispatch among our own rungs does
+  not remove it**.
+* **Unresolvable:** 27 cells are Tier B `measured`, including every 1 MiB+ cell.
+  The raw deltas there favour us (1 MiB: +9.30/+8.07/+11.24%; 4 MiB v3 +11.19%)
+  but Tier B's 25% floor is not cleared, so they are not claims. Under the older
+  band model the picture is the same shape: 2/2/3 wins, 3/3/3 within-noise,
+  12/12/11 losses.
+
+## 6. Does the hybrid beat the best single rung? (item 6)
+
+**Against the strongest single rung (`asm`, the most-won rung by the provenance's
+own count): yes, exactly where that rung is worst, and it is the first win in
+this project that holds on all three targets.** Tier verdicts vs `asm`: **WIN
+3/2/3, LOSS 1/1/1, measured 13/14/13.** The wins: **64 B on all three targets
+(+42.18%, +25.04%, +42.18%)**, 100 B on znver2/v3 (+10.57%, +15.72%), 128 B on
+znver2/v3 (+31.47%, +26.15%), and znver3 300 KB (+3.96%). The three losses are
+single cells: znver2 20000 B (−1.83%), znver3 16 B (−12.57%), v3 16 B (−14.32%).
+
+**Against the per-size best rung — the floor a dispatcher is trying to reach —
+no, and this is the honest price of the design.** The hybrid is **+6.4% to
++28.7% above the per-size floor at 16 B–512 B** (one class lookup and an indirect
+jump, worth 0.3 ns at 16–128 B and 0.6 ns by 512 B, on a copy that is only
+2.2–9.5 ns there), and at most ±2.77% from 1 KB up. It never reaches the floor at
+the sizes where the call overhead is the copy; a dispatcher that did would need
+the lookup for free.
+
+The hypothesis the detour was built around — "no single kernel wins everywhere" —
+is **confirmed**, from the same windows (analysis §6): `asm` has the best median
+penalty against the per-size floor (+0.24/+0.19/+0.00%) but its worst case is
+**+60.17% to +90.27%** at 64 B; `sse2`'s worst is **+243.96% to +272.66%** at
+16 B; `avx2`'s worst +70.21% to +90.27% at 64 B; `avx2_nt`'s +137.17% to
++139.20%. The hybrid's median penalty is +1.83/+2.63/+1.85% and its worst
++14.32/+28.69/+14.32% — a **3–5× better worst case than any single rung, for
+about a 2% median price**.
+
+## 7. Verdict: is the hybrid a promotion candidate? (item 7)
+
+**As a glibc-beater, no** — and the detour answered its own question in the
+negative in a way worth writing down: dispatch was glibc's strategy, we now do it
+with a table generated from our own measurements, and glibc still owns the 64 B
+–20 KB band on all three targets by tier verdict, with two wins to show for it in
+51 cells. "glibc is fast because it dispatches" is therefore **not sufficient** to
+explain the gap; the small-size band is a kernel-quality gap, not a routing gap.
+
+**As the project's best single entry point, yes** — with the 16 B class priced,
+not tuned. It is the only composition whose worst case against the per-size
+floor is under 30%, it turns the 64 B hole into a tier-confirmed win over the
+strongest single rung, and its table is regenerable data. It should not be
+presented as beating glibc; it should be presented as the ceiling of the ladder
+we have built, which is a different and fully supported claim. Kernels 7 and 8
+remain the right next steps — they complete the ladder's evidence, and this phase
+shows they are not on their own a path to the glibc gap.
+
+## 8. What surprised me (item 8)
+
+1. **The premise failed where it was strongest.** The 64 B–20 KB band is exactly
+   where per-size dispatch should help, and it is exactly where the answer did
+   not move: routing 64 B to our own 3.4 ns `sse2` (instead of `asm`'s 5.9 ns)
+   wins big against our rungs and still loses to glibc's 2.5 ns.
+2. **The 64 B cell flipped from "coin-flip" to decisive once a consumer
+   measured it.** Kernel 6 called 64 B a coin-flip and Kernel 4 measured the
+   sign of that cell flipping on byte-identical objects. The dispatcher routes it
+   to `sse2` and gets a tier-confirmed WIN against `asm` on all three targets.
+   The lesson is about the instrument, not the rung: the earlier flip was the
+   comparison, and a dispatcher is a much better-controlled way to ask the same
+   question.
+3. **The lookup is bigger than the copy at 16 B.** 2.5 ns hybrid against 2.2 ns
+   for the rung it calls; +14.32% on znver2/v3 and +28.69% on znver3, and on two
+   targets a tier-confirmed **LOSS** against `asm`. Worse, the provenance calls
+   that class a **coin-flip** (winner margin 0.00% vs the null band on znver2 and
+   v3) — so one class of the table is routing on noise, at the one size where the
+   error is largest relative to the copy.
+4. **Most of this phase cannot be claimed at all.** 12 of 17 cells are Tier B on
+   znver2/znver3 — the instrument's per-window spread at small sizes (59.93% at
+   32 B) is larger than the differences being measured. That is why §5's answer is
+   "2 wins, 22 losses, 27 unresolvable" rather than a size-by-size story.
+5. **The table is only as stable as one window set.** 5 of 39 cells disagreed
+   between the same-window log and the frozen CSVs, and the routing differs per
+   target at 65536 B and 4 MiB. Regeneration is deterministic, but a different
+   campaign would move some of these cells — which is why the table ships with
+   its provenance file, margins and coin-flip flags rather than as a bare array.
+
+## 9. Artifacts and limitations
+
+* `src/memcpy_hybrid.c`, `src/routing_table.h` (generated), `src/common.h`,
+  `src/registry.c`; `scripts/gen_routing_table.sh` →
+  `results/phase2_hybrid_routing.txt` (sources, extractor validation, both
+  sources' tables, the 5 disagreements, the emitted table, the hypothesis count).
+* `tools/route_check.c` + `scripts/hybrid_route_check.sh`: check 1 exhaustive
+  class mapping (8,388,614 sizes + SIZE_MAX/SIZE_MAX−1, **0 mismatches**), check 2
+  the table as compiled, check 3 **420 copies** at every class boundary, boundary
+  ±1, the in-between sizes and 7 offsets, against `memcpy_ref` with 64 B canaries
+  both sides — **0 bad**, on all three targets. `--verify` PASS ×3 through the
+  harness's own CLI: `hybrid OK (glibc reference, n=0..4096 random offsets,
+  canary 64B both sides, plus size list)`.
+* `scripts/phase2_hybrid_campaign.sh` (driver), `scripts/phase2_hybrid_report.sh`
+  → `results/phase2_hybrid_analysis.txt` (551 lines: gate, instrument, table,
+  analyzer output, the hypothesis test, the per-size sanctioned verdicts, the
+  per-rung penalty table and the two-tier summary; every number printed from a
+  log, a CSV, an object or the gate itself). Raw logs stay gitignored per project
+  policy but are self-describing. `results/committed/phase2_hybrid_<t>.csv`:
+  frozen snapshots, cmp-identical to the working CSVs.
+* Commit order: `ee05fc7` "phase2.5: hybrid dispatcher" at 18:32:23, campaign
+  started 18:32:35 — commit before benchmark, with the dispatcher (not the
+  results) in it.
+* Limitation that goes to the top of the list for anyone reading the verdict:
+  **27 of 51 cells are unresolvable in this instrument** (Tier B). Also: the
+  table is size-only (no alignment axis, §0); one class per target is routed on a
+  coin-flip cell; sizes above 4 MiB are clamped to the 4 MiB winner because no
+  Phase 2 campaign measured them (§3); the routed set excludes the prefetch
+  variants because no single
+  campaign measured them with `asm`; and the ~0.3 ns lookup cost is measured as a
+  percentage at tiny sizes, where percentages are not a stable instrument — the
+  direction (dispatcher slower below 512 B) is what is claimed, not the magnitude.

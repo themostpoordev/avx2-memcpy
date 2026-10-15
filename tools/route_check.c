@@ -138,7 +138,9 @@ int main(void)
                    memcpy_hybrid_class(between[i]), memcpy_hybrid_route_name(between[i]));
     }
 
-    /* ---- 3. per-class correctness --------------------------------------- */
+    /* ---- 2 was the table printed above; 3. per-class correctness -------- */
+    printf("\ncheck 2 the table as compiled: printed above (class -> bytes -> routed rung,\n"
+           "  every name read out of the object, not out of the generator's source)\n");
     static const size_t offs[] = { 0, 1, 3, 7, 15, 31, 63 };
     unsigned long copies = 0; unsigned long cbad = 0;
     for (unsigned c = 0; c < memcpy_hybrid_classes(); c++) {
