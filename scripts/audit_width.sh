@@ -59,6 +59,11 @@ declared_bits() {
         memcpy_sse2.c|memset_sse2.c)                                echo 128 ;;
         memcpy_avx2.c|memcpy_avx2_pf2.c|memcpy_avx2_pf4.c|memcpy_avx2_nt.c) \
                                                                     echo 256 ;;
+        # Phase 2.6 tuned family: every one of them has a 32 B (ymm) main path, so
+        # the declared width is 256 even though the <32 B classes are 16/8/4/2/1 B.
+        memcpy_avx2_gcc.c|memcpy_avx2_t4.c|memcpy_avx2_t8.c|memcpy_avx2_t12.c) \
+                                                                    echo 256 ;;
+        memcpy_avx2_t8al.c|memcpy_avx2_t8ap.c|memcpy_avx2_t8alp.c)   echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;

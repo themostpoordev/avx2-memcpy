@@ -100,6 +100,30 @@ endef
 
 $(foreach t,$(TARGETS),$(eval $(call TARGET_RULES,$(t))))
 
+# ---- gcc-built rungs (Phase 2.6 V1/V6/V7) ---------------------------------
+# Every other src/*.c is built by clang. Files named src/*_gcc.c (and
+# src/*_gcc_*.c, for flag variants of one gcc rung) are built by gcc instead, via
+# EXPLICIT per-source rules: an explicit rule beats the pattern rule above, so
+# there is no ambiguity about which compiler produced which object. The flags are
+# the same shape as the clang ones - same per-target -march/-mtune/-mavx2/-mfma,
+# same -fno-builtin so neither compiler is allowed to call libc's memcpy for us -
+# so a measured difference between an _gcc rung and its clang twin is the
+# compiler, not the flag set. GCC_EXTRA_<file> adds per-rung flags (V6).
+CC_GCC := gcc
+GCC_SRCS := $(wildcard src/*_gcc.c) $(wildcard src/*_gcc_*.c)
+
+# NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
+# consumed by make, not by the shell (the same trap documented for `snapshot`).
+define GCC_RULE_ONE
+build/$(1)/$(2:.c=.o): $(2)
+	@mkdir -p $$(dir $$@)
+	$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
+	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing $$(GCC_EXTRA_$(notdir $(2))) \
+	  -MMD -MP -c $$< -o $$@
+endef
+
+$(foreach t,$(TARGETS),$(foreach s,$(GCC_SRCS),$(eval $(call GCC_RULE_ONE,$(t),$(s)))))
+
 single: bench/bench_$(TARGET)
 
 # ---- disassembly for codegen diffing (directive 4) -------------------------

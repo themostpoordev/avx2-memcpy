@@ -59,6 +59,25 @@ const impl_t g_impls[] = {
     { "hybrid", memcpy_hybrid, NULL,
       "phase 2.5: size+target routing over rungs 1-6, table generated from measured min_of_mins" },
 
+    /* ---- Phase 2.6: tuned AVX2 family (V1-V9) ---------------------------
+     * These are not ladder rungs: they are the candidates of the performance
+     * push, each one knob away from its neighbour, measured against glibc in the
+     * same windows. The winner becomes the deliverable (memcpy_avx2_final). */
+    { "avx2_gcc", memcpy_avx2_gcc, NULL,
+      "V1: kernel 4 body, compiled by gcc 16.2.1 instead of clang (same source)" },
+    { "avx2_t4", memcpy_avx2_t4, NULL,
+      "V4: tuned body, unroll 4 (128 B/iter), flat overlap classes, no prefetch" },
+    { "avx2_t8", memcpy_avx2_t8, NULL,
+      "V4: tuned body, unroll 8 (256 B/iter), flat overlap classes, no prefetch" },
+    { "avx2_t12", memcpy_avx2_t12, NULL,
+      "V4: tuned body, unroll 12 (384 B/iter), flat overlap classes, no prefetch" },
+    { "avx2_t8al", memcpy_avx2_t8al, NULL,
+      "V3: tuned body, unroll 8, 32 B-aligned main loop when both pointers allow" },
+    { "avx2_t8ap", memcpy_avx2_t8ap, NULL,
+      "V5: tuned body, unroll 8, aligned path, fixed prefetch +128 B" },
+    { "avx2_t8alp", memcpy_avx2_t8alp, NULL,
+      "V5: tuned body, unroll 8, aligned path, per-class prefetch (+128/+256/+512/+1024)" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
     { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },

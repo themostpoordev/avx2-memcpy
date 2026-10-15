@@ -54,4 +54,17 @@ void *memcpy_asm(void *dst, const void *src, size_t n);      /* kernel 6, hand-w
  */
 void *memcpy_hybrid(void *dst, const void *src, size_t n);
 
+/* --- Phase 2.6: tuned AVX2 family (V1-V9) --------------------------------
+ * One parameterized body (src/memcpy_avx2_tuned_impl.h); each rung here differs
+ * from its neighbours in exactly the knob named in its file. avx2_gcc is the
+ * Kernel 4 body compiled by gcc instead of clang (V1).
+ */
+void *memcpy_avx2_gcc(void *dst, const void *src, size_t n);   /* V1, gcc build of kernel 4 */
+void *memcpy_avx2_t4(void *dst, const void *src, size_t n);    /* V4, unroll 4  */
+void *memcpy_avx2_t8(void *dst, const void *src, size_t n);    /* V4, unroll 8  */
+void *memcpy_avx2_t12(void *dst, const void *src, size_t n);   /* V4, unroll 12 */
+void *memcpy_avx2_t8al(void *dst, const void *src, size_t n);  /* V3, unroll 8 + aligned stores */
+void *memcpy_avx2_t8ap(void *dst, const void *src, size_t n);  /* V5, + fixed prefetch 128 B */
+void *memcpy_avx2_t8alp(void *dst, const void *src, size_t n); /* V5, + per-class prefetch */
+
 #endif /* AVX2_MEM_COMMON_H */
