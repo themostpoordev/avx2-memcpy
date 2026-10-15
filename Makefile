@@ -112,6 +112,15 @@ $(foreach t,$(TARGETS),$(eval $(call TARGET_RULES,$(t))))
 CC_GCC := gcc
 GCC_SRCS := $(wildcard src/*_gcc.c) $(wildcard src/*_gcc_*.c)
 
+# ---- V6 per-rung compiler flags -------------------------------------------
+# Each _gcc_<flag> rung is memcpy_avx2_final_gcc.c's source plus exactly one flag,
+# so the measured per-flag delta is the flag. Adopted only if `--verify` and `make
+# gate` still pass with the flag on (a flag that changes the answer is not a
+# speed flag).
+GCC_EXTRA_memcpy_avx2_final_gcc_ofast.c  := -Ofast
+GCC_EXTRA_memcpy_avx2_final_gcc_unroll.c := -funroll-loops
+GCC_EXTRA_memcpy_avx2_final_gcc_noplt.c  := -fno-plt
+
 # NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
 # consumed by make, not by the shell (the same trap documented for `snapshot`).
 define GCC_RULE_ONE

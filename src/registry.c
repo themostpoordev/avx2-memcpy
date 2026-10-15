@@ -80,6 +80,25 @@ const impl_t g_impls[] = {
     { "avx2_t4pf", memcpy_avx2_t4pf, NULL,
       "V5b: tuned body, unroll 4, aligned path, +128 B prefetch only at 64 KB and up" },
 
+    /* ---- Phase 2.6 V9/V6: the fused final and its flag variants -----------
+     * avx2_final is the fused kernel (V1-V8 winners). The clang and gcc builds
+     * differ in the compiler only, so the pair measures V1 on the final kernel.
+     * final16_gcc flips exactly one knob against final_gcc: the 32..63 B class
+     * is four 16 B moves instead of two 32 B moves (V8's open question). The
+     * three _gcc_<flag> rungs are final_gcc plus one compiler flag each (V6). */
+    { "avx2_final", memcpy_avx2_final, NULL,
+      "V9: fused AVX2 - unroll 4, 32 B-aligned path, prefetch +128 gated at 64 KB, flat overlap classes, no tail branch (clang)" },
+    { "avx2_final_gcc", memcpy_avx2_final_gcc, NULL,
+      "V9: identical source and knobs to avx2_final, built by gcc 16.2.1" },
+    { "avx2_final16_gcc", memcpy_avx2_final16_gcc, NULL,
+      "V9: as avx2_final_gcc with the 32..63 B class as four 16 B moves (only TUNED_SMALL_AVX differs)" },
+    { "avx2_final_gcc_ofast", memcpy_avx2_final_gcc_ofast, NULL,
+      "V6: avx2_final_gcc + -Ofast" },
+    { "avx2_final_gcc_unroll", memcpy_avx2_final_gcc_unroll, NULL,
+      "V6: avx2_final_gcc + -funroll-loops" },
+    { "avx2_final_gcc_noplt", memcpy_avx2_final_gcc_noplt, NULL,
+      "V6: avx2_final_gcc + -fno-plt (control: this rung makes no calls)" },
+
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
     { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },

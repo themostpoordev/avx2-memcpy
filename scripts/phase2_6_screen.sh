@@ -21,9 +21,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-IMPLS="glibc,avx2,avx2_gcc,avx2_t4,avx2_t8,avx2_t12,avx2_t8al,avx2_t8ap,avx2_t8alp"
+IMPLS="glibc,avx2,avx2_gcc,avx2_t4,avx2_t8,avx2_t8ap,avx2_t4pf"
 SIZES="16,32,64,128,256,512,1024,4096,16384,65536,262144,1048576,4194304"
-PROG=results/phase2_6_campaign_progress.log
+PROG=results/phase2_6_round2_progress.log
 TARGETS="${*:-znver2 znver3 v3}"
 
 if [ ! -f "$PROG" ]; then
@@ -37,7 +37,7 @@ for t in $TARGETS; do
     printf '=== target %s start %s\n' "$t" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$PROG"
     rc=0
     ITERS=4000 RUN_TO_CAP=1 sh scripts/mo_measure.sh "$t" "$IMPLS" memcpy "$SIZES" \
-        "results/phase2_6_screen_$t.windows.log" 9 9 >> "$PROG" 2>&1 || rc=$?
+        "results/phase2_6_round2_$t.windows.log" 9 9 >> "$PROG" 2>&1 || rc=$?
     printf '=== target %s end rc=%s %s\n' "$t" "$rc" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$PROG"
 done
 printf 'Phase 2.6 screening campaign done %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$PROG"

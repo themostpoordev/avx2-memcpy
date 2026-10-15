@@ -68,4 +68,17 @@ void *memcpy_avx2_t8ap(void *dst, const void *src, size_t n);  /* V5, + fixed pr
 void *memcpy_avx2_t8alp(void *dst, const void *src, size_t n); /* V5, + per-class prefetch */
 void *memcpy_avx2_t4pf(void *dst, const void *src, size_t n);  /* V5b, + prefetch gated at 64 KB */
 
+/* --- Phase 2.6 V9: fused final candidates --------------------------------
+ * V1-V8 winners combined into one kernel. The clang and gcc builds share a knob
+ * set so the pair measures the compiler on the FINAL kernel (V1's verdict was
+ * taken on Kernel 4); final16_gcc flips only the 32..63 B class width (V8); the
+ * last three are the V6 flag variants of the gcc build.
+ */
+void *memcpy_avx2_final(void *dst, const void *src, size_t n);         /* V9, clang */
+void *memcpy_avx2_final_gcc(void *dst, const void *src, size_t n);     /* V9, gcc */
+void *memcpy_avx2_final16_gcc(void *dst, const void *src, size_t n);   /* V9, gcc, 16 B small path */
+void *memcpy_avx2_final_gcc_ofast(void *dst, const void *src, size_t n);  /* V6: -Ofast */
+void *memcpy_avx2_final_gcc_unroll(void *dst, const void *src, size_t n); /* V6: -funroll-loops */
+void *memcpy_avx2_final_gcc_noplt(void *dst, const void *src, size_t n);  /* V6: -fno-plt */
+
 #endif /* AVX2_MEM_COMMON_H */

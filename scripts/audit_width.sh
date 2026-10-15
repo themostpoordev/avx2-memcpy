@@ -65,6 +65,16 @@ declared_bits() {
                                                                     echo 256 ;;
         memcpy_avx2_t8al.c|memcpy_avx2_t8ap.c|memcpy_avx2_t8alp.c)   echo 256 ;;
         memcpy_avx2_t4pf.c)                                         echo 256 ;;
+        # Phase 2.6 V9/V6/V7: every fused final builds from memcpy_avx2_tuned_impl.h
+        # with TUNED_* knobs, and every one of them declares 256 (32 B AVX2
+        # moves) as its widest access - the knobs change when and where the
+        # moves happen, never their width. Declared explicitly per file rather
+        # than by a glob so a new file here can never inherit a width nobody
+        # checked: memcpy_avx2_final*.c must be added to this row by hand.
+        memcpy_avx2_final.c|memcpy_avx2_final_gcc.c)                echo 256 ;;
+        memcpy_avx2_final16_gcc.c)                                  echo 256 ;;
+        memcpy_avx2_final_gcc_ofast.c|memcpy_avx2_final_gcc_unroll.c|memcpy_avx2_final_gcc_noplt.c) \
+                                                                    echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;
