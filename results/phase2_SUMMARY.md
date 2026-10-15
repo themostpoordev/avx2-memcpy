@@ -1350,8 +1350,15 @@ the cross-campaign mixing the generator refuses).
 
 The generator cross-checks a second source (the union of frozen committed CSVs)
 but does not decide with it, and prints every disagreement: **5 of 39 cells**. The
-reason is in the file — glibc's 4 MiB row across the nine frozen CSVs spans
-116990–131739 ns on one unchanged binary. Two further honesty features:
+reason is in the file — glibc's 4 MiB row across the frozen CSVs spans
+116990–131739 ns on one unchanged binary (ten CSVs as of the regeneration below,
+the three hybrid snapshots included). SOURCE A, which decides, is a single window
+set from one campaign and does not move; because SOURCE B is a union over the
+frozen CSVs, the cross-check column in the provenance file *does* move as new
+snapshots are added, which is why the file is regenerated (and committed) rather
+than quoted from memory — the emitted table and `src/routing_table.h` are
+byte-identical across that regeneration, so the decision is stable even though
+the check column is not. Two further honesty features:
 `scripts/gen_routing_table.sh` validates its own extractor against the three
 rungs a frozen same-campaign CSV shares with it (max |frozen − extracted| =
 0.0500 ns, i.e. the CSV's own rounding), and it labels every class **decided** or
