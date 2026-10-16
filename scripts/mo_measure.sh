@@ -42,7 +42,12 @@ WARMUP="${WARMUP:-2}"
 ITERS="${ITERS:-100}"
 PIN="${PIN:-2}"
 
-BIN="./bench/bench_${TARGET}"
+# BIN may be overridden: the V6/V7 probe rungs (-flto, PGO) live in
+# bench/<t>_perf6 because they are link-time properties, and a campaign that
+# measures them has to run THAT binary. Everything else about the measurement is
+# unchanged - in particular the rung being compared against is still measured in
+# the same process and the same windows.
+BIN="${BIN:-./bench/bench_${TARGET}}"
 [ -x "$BIN" ] || { echo "mo_measure: $BIN missing (run make first)" >&2; exit 2; }
 command -v taskset >/dev/null 2>&1 || {
     echo "mo_measure: taskset not found; pinning is mandatory, refusing to measure" >&2

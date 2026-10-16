@@ -26,6 +26,12 @@
 #   and nothing is auto-approved: either the source changes or the declaration
 #   changes, and a human decides which.
 #
+#   src/perf6/*.c (the V6 -flto and V7 PGO probe TUs) are covered by the same
+#   table and the same comparison. One case cannot be read from the object: a
+#   slim LTO object has an empty .text and carries only GIMPLE bytecode, so its
+#   width is measured in the LINKED probe binary instead - the artifact a campaign
+#   actually calls. See the perf6 branch in the gate loop.
+#
 #   Classification is deliberately strict about vector instructions: a VEX/EVEX
 #   memory operand whose width this script does not know is an ERROR
 #   ("unclassified"), never a silent skip, so the gate cannot drift into
@@ -75,6 +81,12 @@ declared_bits() {
         memcpy_avx2_final16_gcc.c)                                  echo 256 ;;
         memcpy_avx2_final_gcc_ofast.c|memcpy_avx2_final_gcc_unroll.c|memcpy_avx2_final_gcc_noplt.c) \
                                                                     echo 256 ;;
+        memcpy_avx2_final_gcc_noomit.c)                             echo 256 ;;
+        # Phase 2.6 V6/V7 probe TUs (src/perf6/, built only by `make
+        # perf6probe-<t>`): -flto and PGO variants of the fused final kernel.
+        # Same body, same 32 B moves, so the same declaration, and the loop below
+        # checks them in the object they were actually compiled into.
+        memcpy_avx2_final_lto.c|memcpy_avx2_final_pgo.c)             echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;
@@ -218,6 +230,20 @@ widest_of() {   # <object>
         END { if (bad) exit 0; if (max == 0) print "NONE|"; else print max "|" txt }'
 }
 
+# Same classifier, but over ONE symbol inside a LINKED binary. Needed for slim
+# LTO objects (-flto without -ffat-lto-objects): their .text is empty and the
+# function exists only as GIMPLE bytecode, which the linker compiles with the LTO
+# plugin. The object therefore cannot answer "what width is benchmarked" - the
+# linked function can. See the perf6 branch in the gate loop.
+widest_of_sym() {   # <binary> <symbol>
+    objdump -d --no-show-raw-insn --disassemble="$2" "$1" | awk "$CLASSIFY" | awk -F'\t' '
+        $1 == "UNCLASSIFIED" { print "UNCLASSIFIED|" $2 " " $3; bad = 1; next }
+        { b = $1 + 0; ins = $2 " " $3
+          if (b > max) { max = b; txt = ins; n = 1 }
+          else if (b == max) { if (n < 4) txt = txt "; " ins; n++ } }
+        END { if (bad) exit 0; if (max == 0) print "NONE|"; else print max "|" txt }'
+}
+
 override_bits() {   # <source-basename> -> bits or ""
     [ -f "$ALLOW" ] || { echo ""; return; }
     awk -v want="$1" '/^[[:space:]]*#/ { next } $1 == want { print $2; exit }' "$ALLOW"
@@ -280,11 +306,28 @@ echo "                overrides from $ALLOW"
 fail=0
 for t in znver2 znver3 v3; do
     echo "--- target $t"
-    for src in src/*.c src/*.S; do
+    for src in src/*.c src/*.S src/perf6/*.c; do
         base=$(basename "$src")
         [ "$base" = "registry.c" ] && continue           # harness table, not a kernel
-        obj="build/$t/${src%.*}.o"
-        [ -f "$obj" ] || { echo "  MISSING OBJECT: $obj (run make first)"; fail=1; continue; }
+        case "$src" in
+        src/perf6/*) obj="build/$t/src/perf6/${base%.c}.o" ;;   # V6/V7 probe TUs
+        *)           obj="build/$t/${src%.*}.o" ;;
+        esac
+        if [ ! -f "$obj" ]; then
+            case "$src" in
+            src/perf6/*)
+                # A probe TU exists only after `make perf6probe-<t>`, which is also
+                # the only way one is ever benchmarked. Absent means "nothing in
+                # the ladder can measure it either", so this is reported, not
+                # failed; present means it is checked like any other rung. The
+                # line is printed on every gate run so the omission stays visible.
+                printf '  %-34s not built (probe TU: `make perf6probe-%s` builds and gates it)\n' "$base" "$t"
+                ;;
+            *)
+                echo "  MISSING OBJECT: $obj (run make first)"; fail=1 ;;
+            esac
+            continue
+        fi
         dec=$(declared_bits "$base")
         ovr=$(override_bits "$base")
         if [ -n "$ovr" ]; then dec="$ovr"; mark=" [override: $(override_note "$base")]"; else mark=""; fi
@@ -292,6 +335,44 @@ for t in znver2 znver3 v3; do
             printf '  %-34s NO DECLARED WIDTH for this source - add a row to declared_bits() or %s\n' "$base" "$ALLOW"
             fail=1; continue
         fi
+        # ---- slim-LTO probe TU: read the width in the LINKED binary ----------
+        # A -flto object compiled without -ffat-lto-objects carries NO machine
+        # code: .text is empty and the function exists only as GIMPLE bytecode
+        # for the linker's LTO plugin to compile. Reading that object says nothing
+        # about the code a campaign calls, and the first version of this gate
+        # FAILED such a TU with "compiled no data access found" - the gate being
+        # wrong, not the rung. So for these TUs the width is taken from the
+        # function as it exists in the linked probe binary. Nothing is skipped and
+        # nothing is auto-approved: a missing binary or a missing symbol is a
+        # failure, not a pass.
+        case "$src" in
+        src/perf6/*)
+            if [ "$(objdump -h "$obj" | awk '$2 == ".text" { print $3 }')" = "00000000" ]; then
+                sym=${base%.c}
+                probe="bench/bench_${t}_perf6"
+                if [ ! -x "$probe" ]; then
+                    printf '  %-34s slim LTO object, but %s is missing: build it with `make perf6probe-%s`\n' \
+                        "$base" "$probe" "$t"
+                    fail=1; continue
+                fi
+                if ! nm "$probe" 2>/dev/null | grep -qE "[[:space:]]$sym$"; then
+                    printf '  %-34s symbol %s is not in %s - cannot check the width of what is benchmarked\n' \
+                        "$base" "$sym" "$probe"
+                    fail=1; continue
+                fi
+                res=$(widest_of_sym "$probe" "$sym"); got=${res%%|*}; ins=${res#*|}
+                if [ "$got" = "$dec" ]; then
+                    printf '  %-34s declared %-4s compiled %-4s OK%s   (in the linked binary: %s) [slim LTO: no code of its own]\n' \
+                        "$base" "$dec" "$got" "$mark" "$ins"
+                else
+                    printf '  %s declares width %s but the linked function %s compiles to width %s (%s). Either fix the source or update the declared width.\n' \
+                        "$src" "$dec" "$sym" "$got" "$ins"
+                    fail=1
+                fi
+                continue
+            fi
+            ;;
+        esac
         # ---- dispatcher rule (a)(b)(c), see the block above ----------------
         case " $DISPATCHER_SRCS " in
         *" $base "*)

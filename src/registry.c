@@ -98,6 +98,24 @@ const impl_t g_impls[] = {
       "V6: avx2_final_gcc + -funroll-loops" },
     { "avx2_final_gcc_noplt", memcpy_avx2_final_gcc_noplt, NULL,
       "V6: avx2_final_gcc + -fno-plt (control: this rung makes no calls)" },
+    { "avx2_final_noomit", memcpy_avx2_final_noomit, NULL,
+      "V6: fused final with -fno-omit-frame-pointer forced ON (so a slowdown here = the worth of omitting it)" },
+
+#ifdef PERF6_PROBE
+    /* ---- Phase 2.6 V6/V7 probe-only rungs --------------------------------
+     * These two rows exist ONLY in the probe binary (bench/<t>_perf6), which is
+     * built with -DPERF6_PROBE so this table appends them and the same link pulls
+     * in their variant objects (Makefile: perf6probe-<t>). Both are the fused
+     * final kernel with exactly one thing changed - the compiler flag set - and
+     * they sit here, beside their non-flagged twin, so the comparison is
+     * interleaved inside one process (protocol rule 4) in the same windows. A
+     * flag measured in a binary of its own would be a different-windows
+     * comparison, which this project does not make claims from. */
+    { "avx2_final_lto", memcpy_avx2_final_lto, NULL,
+      "V6: fused final compiled AND linked with -flto (probe binary only)" },
+    { "avx2_final_pgo", memcpy_avx2_final_pgo, NULL,
+      "V7: fused final rebuilt with -fprofile-use over the harness's own ladder (probe binary only)" },
+#endif
 
     /* ---- Phase 2 rest of the ladder -------------------------------------
     { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },

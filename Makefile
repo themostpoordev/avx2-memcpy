@@ -70,7 +70,9 @@ $(error TARGET must be one of: $(TARGETS))
 endif
 
 .PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot ntprobe routecheck \
-        $(addprefix ntprobe-,$(TARGETS))
+        perf6probe perf6gen \
+        $(addprefix ntprobe-,$(TARGETS)) $(addprefix perf6probe-,$(TARGETS)) \
+        $(addprefix perf6gen-,$(TARGETS))
 
 all: $(BINS)
 bench: $(BINS)
@@ -120,6 +122,10 @@ GCC_SRCS := $(wildcard src/*_gcc.c) $(wildcard src/*_gcc_*.c)
 GCC_EXTRA_memcpy_avx2_final_gcc_ofast.c  := -Ofast
 GCC_EXTRA_memcpy_avx2_final_gcc_unroll.c := -funroll-loops
 GCC_EXTRA_memcpy_avx2_final_gcc_noplt.c  := -fno-plt
+# -fomit-frame-pointer is already in OPT for every rung, so the "gain from it"
+# cannot be measured by adding it. This rung forces it OFF instead: if it is
+# slower by X%, the flag is worth X%. (See the source header.)
+GCC_EXTRA_memcpy_avx2_final_gcc_noomit.c := -fno-omit-frame-pointer
 
 # NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
 # consumed by make, not by the shell (the same trap documented for `snapshot`).
@@ -132,6 +138,74 @@ build/$(1)/$(2:.c=.o): $(2)
 endef
 
 $(foreach t,$(TARGETS),$(foreach s,$(GCC_SRCS),$(eval $(call GCC_RULE_ONE,$(t),$(s)))))
+
+# ---- Phase 2.6 V6/V7 probe binary: -flto and PGO, one binary ----------------
+# -flto and PGO are whole-TU / link-time properties, so their rungs cannot be
+# rows in the normal bench_<t> binaries: the honest control for either is a
+# binary holding BOTH the variant object and its non-variant twin, so the two are
+# measured interleaved inside one process (protocol rule 4) in the same windows.
+# `make perf6probe-<t>` therefore builds bench/bench_<t>_perf6 out of every normal
+# object, plus build/<t>/src/perf6/{memcpy_avx2_final_lto,memcpy_avx2_final_pgo}.o,
+# plus a registry.o recompiled with -DPERF6_PROBE, which appends exactly two rows
+# (avx2_final_lto, avx2_final_pgo) and nothing else.
+#
+# The two sources live in src/perf6/, not src/, so the normal wildcard build never
+# sees them and `make bench` never depends on profile data existing. They are
+# still width-gated: scripts/audit_width.sh walks src/perf6/*.c too, so "not in
+# the ladder binaries" does not mean "not checked".
+#
+# PGO is two stages and both write the SAME object path on purpose: gcc derives
+# the .gcda name from the object path, so a -fprofile-use object built anywhere
+# else compiles with no profile at all (a warning, not an error - exactly the
+# silent no-op this project keeps getting bitten by). Stage 1 is a workload
+# binary only: an instrumented kernel is slower by construction, so it is never
+# benchmarked. Stage 2 is what enters a claim.
+PERF6_SRCS   := src/perf6/memcpy_avx2_final_lto.c src/perf6/memcpy_avx2_final_pgo.c
+PERF6_LADDER := 16,32,64,128,256,512,1024,4096,16384,65536,262144,1048576,4194304
+
+# NOTE: $$(...) needs the double dollar everywhere below - a single $ is eaten by
+# make, not by the shell (same trap as the ntprobe and snapshot recipes).
+define PERF6_TARGET
+perf6gen-$(1): $(BINS)
+	@mkdir -p build/$(1)/src/perf6 build/$(1)/probe results
+	@rm -f build/$(1)/src/perf6/memcpy_avx2_final_pgo.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.gcda
+	@echo "perf6[$(1)] stage 1: instrumented kernel (-fprofile-generate) and profile workload"
+	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
+	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing -fprofile-generate \
+	  -c src/perf6/memcpy_avx2_final_pgo.c -o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o
+	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
+	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing -flto \
+	  -c src/perf6/memcpy_avx2_final_lto.c -o build/$(1)/src/perf6/memcpy_avx2_final_lto.o
+	@$$(CC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
+	  -DTARGET_NAME='"$(1)"' -DROUTING_TARGET_NAME=$(1) -DPERF6_PROBE \
+	  -c src/registry.c -o build/$(1)/probe/registry.o
+	@$$(CC_GCC) $$(OPT) $$(WARN) $$(FLAGS_$(1)) \
+	  $$(filter-out build/$(1)/src/registry.o,$$(addprefix build/$(1)/,$$(SRC_OBJ))) \
+	  build/$(1)/probe/registry.o \
+	  build/$(1)/src/perf6/memcpy_avx2_final_lto.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o \
+	  $$(LDFLAGS) -fprofile-generate -o bench/bench_$(1)_perf6gen
+	@taskset -c 2 ./bench/bench_$(1)_perf6gen --impl avx2_final_pgo \
+	  --sizes $(PERF6_LADDER) --reps 3 --iters 2000 --warmup 2 --budget 0.05 \
+	  > results/perf6_$(1)_pgo_workload.log 2>&1 \
+	  || { echo "perf6[$(1)] profile workload FAILED - see results/perf6_$(1)_pgo_workload.log" >&2; tail -5 results/perf6_$(1)_pgo_workload.log >&2; exit 1; }
+	@test -f build/$(1)/src/perf6/memcpy_avx2_final_pgo.gcda \
+	  || { echo "perf6[$(1)] FAILED: no .gcda was written, so stage 2 would compile with NO profile" >&2; exit 1; }
+	@echo "perf6[$(1)] stage 1 done: .gcda present, workload log results/perf6_$(1)_pgo_workload.log"
+
+perf6probe-$(1): perf6gen-$(1)
+	@echo "perf6[$(1)] stage 2: -fprofile-use kernel + -flto link -> bench/bench_$(1)_perf6"
+	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
+	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing -fprofile-use \
+	  -c src/perf6/memcpy_avx2_final_pgo.c -o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o
+	@$$(CC_GCC) $$(OPT) $$(WARN) $$(FLAGS_$(1)) -flto \
+	  $$(filter-out build/$(1)/src/registry.o,$$(addprefix build/$(1)/,$$(SRC_OBJ))) \
+	  build/$(1)/probe/registry.o \
+	  build/$(1)/src/perf6/memcpy_avx2_final_lto.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o \
+	  $$(LDFLAGS) -o bench/bench_$(1)_perf6
+	@echo "built bench/bench_$(1)_perf6 (V6 -flto + V7 PGO rungs beside their non-flagged twins)"
+endef
+$(foreach t,$(TARGETS),$(eval $(call PERF6_TARGET,$(t))))
+perf6probe: $(addprefix perf6probe-,$(TARGETS))
 
 single: bench/bench_$(TARGET)
 

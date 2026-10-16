@@ -80,5 +80,15 @@ void *memcpy_avx2_final16_gcc(void *dst, const void *src, size_t n);   /* V9, gc
 void *memcpy_avx2_final_gcc_ofast(void *dst, const void *src, size_t n);  /* V6: -Ofast */
 void *memcpy_avx2_final_gcc_unroll(void *dst, const void *src, size_t n); /* V6: -funroll-loops */
 void *memcpy_avx2_final_gcc_noplt(void *dst, const void *src, size_t n);  /* V6: -fno-plt */
+void *memcpy_avx2_final_noomit(void *dst, const void *src, size_t n);     /* V6: -fno-omit-frame-pointer */
+
+/* Probe-only rungs: -flto and PGO are link-time properties, so they are built
+ * into bench/<t>_perf6 (see the Makefile's perf6 rules) and only that binary
+ * defines PERF6_PROBE. The declarations are guarded so the normal binaries can
+ * never reference an object they do not link. */
+#ifdef PERF6_PROBE
+void *memcpy_avx2_final_lto(void *dst, const void *src, size_t n);       /* V6: -flto */
+void *memcpy_avx2_final_pgo(void *dst, const void *src, size_t n);       /* V7: PGO */
+#endif
 
 #endif /* AVX2_MEM_COMMON_H */
