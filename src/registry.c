@@ -92,6 +92,8 @@ const impl_t g_impls[] = {
       "V9: identical source and knobs to avx2_final, built by gcc 16.2.1" },
     { "avx2_final16_gcc", memcpy_avx2_final16_gcc, NULL,
       "V9: as avx2_final_gcc with the 32..63 B class as four 16 B moves (only TUNED_SMALL_AVX differs)" },
+    { "avx2_final_v2_gcc", memcpy_avx2_final_v2_gcc, NULL,
+      "V9b: as avx2_final_gcc with n <= 64 taken from one compare (only TUNED_SMALL_PATH differs)" },
     { "avx2_final_gcc_ofast", memcpy_avx2_final_gcc_ofast, NULL,
       "V6: avx2_final_gcc + -Ofast" },
     { "avx2_final_gcc_unroll", memcpy_avx2_final_gcc_unroll, NULL,

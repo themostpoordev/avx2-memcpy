@@ -82,6 +82,9 @@ declared_bits() {
         memcpy_avx2_final_gcc_ofast.c|memcpy_avx2_final_gcc_unroll.c|memcpy_avx2_final_gcc_noplt.c) \
                                                                     echo 256 ;;
         memcpy_avx2_final_gcc_noomit.c)                             echo 256 ;;
+        # V9b: same body and same 32 B moves, reached from one compare at
+        # n <= 64 - the widest access is still 256 bits.
+        memcpy_avx2_final_v2_gcc.c)                                 echo 256 ;;
         # Phase 2.6 V6/V7 probe TUs (src/perf6/, built only by `make
         # perf6probe-<t>`): -flto and PGO variants of the fused final kernel.
         # Same body, same 32 B moves, so the same declaration, and the loop below

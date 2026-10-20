@@ -67,6 +67,28 @@
 #define TUNED_PF_MIN 0
 #endif
 
+/* Optional (V9b): take the n <= 64 classes from a SINGLE compare, before the
+ * flat-class chain, and copy them with kernel 4's shape.
+ *
+ * Why it is a knob and not always on: with it off, this header compiles to the
+ * exact bytes every rung of the final1 campaign was measured on, so the V9b rung
+ * is one flag away from its control and the measured difference is that flag.
+ *
+ * The chain below is six compares deep at 16 B (512, 256, 128, 64, 32, 16). On a
+ * copy that costs ~7 cycles end to end that is a real fraction, and the final1
+ * campaign shows it: 3.1 ns at 16-64 B against 2.2 ns for the same moves reached
+ * from a short chain (kernel 4) and 1.9 ns for the PGO build, which pushes the
+ * same cold classes out of the hot path. The block skips the chain entirely for
+ * n <= 64 and copies what the chain would have copied.
+ *
+ * Correctness is the argument used everywhere else in this file: each pair of
+ * moves covers [0,sz) and [n-sz,n) with n-sz >= 0, so nothing is touched outside
+ * [0,n); src and dst do not overlap; and `--verify` walks every n in 0..4096, so
+ * a wrong edge in here cannot survive the gate. */
+#ifndef TUNED_SMALL_PATH
+#define TUNED_SMALL_PATH 0
+#endif
+
 #include <immintrin.h>
 #include <stdint.h>
 #include "common.h"
@@ -122,6 +144,33 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
 {
     unsigned char       *d = (unsigned char *)dst;
     const unsigned char *s = (const unsigned char *)src;
+
+#if TUNED_SMALL_PATH
+    /* ---- V9b: the tiny classes, reached in ONE compare ------------------- */
+    if (n <= 64) {
+        if (n < 16) {
+            if (n >= 8) {
+                uint64_t a, b;
+                __builtin_memcpy(&a, s, 8); __builtin_memcpy(&b, s + n - 8, 8);
+                __builtin_memcpy(d, &a, 8); __builtin_memcpy(d + n - 8, &b, 8);
+            } else if (n >= 4) {
+                uint32_t a, b;
+                __builtin_memcpy(&a, s, 4); __builtin_memcpy(&b, s + n - 4, 4);
+                __builtin_memcpy(d, &a, 4); __builtin_memcpy(d + n - 4, &b, 4);
+            } else if (n >= 2) {
+                uint16_t a, b;
+                __builtin_memcpy(&a, s, 2); __builtin_memcpy(&b, s + n - 2, 2);
+                __builtin_memcpy(d, &a, 2); __builtin_memcpy(d + n - 2, &b, 2);
+            } else if (n == 1) {
+                d[0] = s[0];
+            }
+            return dst;
+        }
+        if (n < 32) { T_MOVE16(0); T_MOVE16(n - 16); return dst; }
+        T_MOVE16(0); T_MOVE16(16); T_MOVE16(n - 32); T_MOVE16(n - 16);
+        return dst;
+    }
+#endif
 
     /* ---------------- flat classes: no loop, no tail branch -------------- */
     if (n <= 512) {
