@@ -177,6 +177,8 @@ const impl_t g_impls[] = {
       "P1 take 2: as avx2_mid with the head peel gated at 4 KiB (only MID_PEEL_MIN differs) - the candidate if it wins" },
     { "avx2_mid_u4pf1", memcpy_avx2_mid_u4pf1, NULL,
       "P1 diagnostic: unroll 4 with ONE prefetch stream (MID_PF2 = 0) - prices prefetch density against block size for the u4 anomaly" },
+    { "avx2_mid_asm", memcpy_avx2_mid_asm, NULL,
+      "P5: hand-scheduled asm twin of avx2_mid_pm (same peel/loop/tail); n < 1024 tail-calls the C deliverable, so its sub-1 KiB rows are not asm" },
 };
 
 const size_t g_impl_count = sizeof g_impls / sizeof g_impls[0];

@@ -111,6 +111,8 @@ declared_bits() {
         # declaration describes the widest *instruction* in the TU.
         memcpy_rep.c)                                               echo 64 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
+        # Phase 3 P5: the mid-range asm twin - 32 B moves, same as the C it twins.
+        memcpy_avx2_mid_asm.S)                                      echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;
         *)                                                          echo ""  ;;
     esac
