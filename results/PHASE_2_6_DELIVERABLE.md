@@ -49,7 +49,7 @@ carry the tier and floor for every cell.
 
 ## 3. Wins
 
-Six size classes with certified deltas over glibc, on all three targets:
+Five size classes with certified deltas over glibc:
 
 | class | certified delta | tier |
 |:--|:--|:--|
@@ -59,9 +59,9 @@ Six size classes with certified deltas over glibc, on all three targets:
 | 256 B | +8.41% | A on znver3 and v3 |
 | 512 B | +15.7% … +16.8% | A ×3 |
 
-That is five classes certified on every target. 256 B is the sixth on two of the
-three, and its third target is Tier B at a 25% floor — the protocol's limit, not
-the kernel's.
+That is four classes certified on every target (16, 32, 64, 512 B). 256 B is the
+fifth on two of the three; its third target is Tier B at a 25% floor — the
+protocol's limit, not the kernel's.
 
 ## 4. Losses and unmeasurable
 
