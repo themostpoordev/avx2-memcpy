@@ -134,7 +134,7 @@ declared_bits() {
 #       object actually references (256 = max(8,64,128,256)), not merely be larger.
 # Nothing here is auto-approved and nothing is skipped quietly: every dispatcher
 # prints its own line with the routed set and the widths involved.
-DISPATCHER_SRCS="memcpy_hybrid.c"
+DISPATCHER_SRCS="memcpy_hybrid.c memcpy_avx2_mid_disp_gcc.c"
 
 # rung symbol -> declared width of the TU that defines it
 rung_symbol_bits() {
@@ -145,6 +145,9 @@ rung_symbol_bits() {
         memcpy_avx2)               echo 256 ;;
         memcpy_avx2_nt)            echo 256 ;;
         memcpy_asm)                echo 256 ;;
+        # Phase 3 Task 1 dispatcher routes to these two rungs.
+        memcpy_avx2_mid_pm)        echo 256 ;;
+        memcpy_avx2_final_v2_gcc_noxj) echo 256 ;;
         *)                         echo ""  ;;
     esac
 }

@@ -113,6 +113,7 @@ void *memcpy_avx2_mid_ntpf(void *dst, const void *src, size_t n);   /* P3: NTA s
 void *memcpy_avx2_mid_pm(void *dst, const void *src, size_t n);     /* P1b: peel gated at 4 KiB (candidate) */
 void *memcpy_avx2_mid_u4pf1(void *dst, const void *src, size_t n);  /* P1 diagnostic: unroll 4, one stream */
 void *memcpy_avx2_mid_asm(void *dst, const void *src, size_t n);    /* P5: hand-scheduled twin of mid_pm (>1 KiB only) */
+void *memcpy_avx2_mid_disp(void *dst, const void *src, size_t n);   /* Task 1: deliverable < 4 KiB, mid_pm at 4 KiB+ */
 
 /* Probe-only rungs: -flto and PGO are link-time properties, so they are built
  * into bench/<t>_perf6 (see the Makefile's perf6 rules) and only that binary
