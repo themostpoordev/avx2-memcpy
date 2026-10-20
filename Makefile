@@ -130,6 +130,12 @@ GCC_EXTRA_memcpy_avx2_final_gcc_noomit.c := -fno-omit-frame-pointer
 # T_BLOCKPAIR(2) and T_BLOCKPAIR(4) heads (see the source header). This rung
 # forbids that one transform and nothing else.
 GCC_EXTRA_memcpy_avx2_final_v2_gcc_noxj.c := -fno-crossjumping
+# F1-F4 (the 128/256 B pass) are all measured against V9c, so they carry its
+# one flag too; their own knob is in the source's TUNED_* set, not here.
+GCC_EXTRA_memcpy_avx2_final_f1_gcc.c      := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_final_f3_gcc.c      := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_final_f4_gcc.c      := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_final_ifunc_gcc.c   := -fno-crossjumping
 
 # NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
 # consumed by make, not by the shell (the same trap documented for `snapshot`).

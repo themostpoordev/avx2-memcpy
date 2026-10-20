@@ -96,6 +96,19 @@ const impl_t g_impls[] = {
       "V9b: as avx2_final_gcc with n <= 64 taken from one compare (only TUNED_SMALL_PATH differs)" },
     { "avx2_final_v2_gcc_noxj", memcpy_avx2_final_v2_gcc_noxj, NULL,
       "V9c: identical to avx2_final_v2_gcc, built with -fno-crossjumping (only the flag differs)" },
+
+    /* ---- the 128/256 B pass (F1-F4) --------------------------------------
+     * Four attempts at the two certified losses, each one knob away from
+     * avx2_final_v2_gcc_noxj so the pair delta is the attempt. One pass only;
+     * whatever they do, the deficit is reported as it stands after it. */
+    { "avx2_final_f1", memcpy_avx2_final_f1, NULL,
+      "F1: V9c + __builtin_expect on the tiny and alignment branches" },
+    { "avx2_final_f3_notest", memcpy_avx2_final_f3_notest, NULL,
+      "F3: V9c with the alignment test and aligned loop removed (bounds the alignment-contract idea; verifiable form)" },
+    { "avx2_final_f4_win", memcpy_avx2_final_f4_win, NULL,
+      "F4: V9c + a straight-line 128..256 B window reached by one compare" },
+    { "avx2_final_ifunc", memcpy_avx2_final_ifunc, NULL,
+      "F2: the same body behind an IFUNC symbol (measures the indirection a load-time resolver costs)" },
     { "avx2_final_gcc_ofast", memcpy_avx2_final_gcc_ofast, NULL,
       "V6: avx2_final_gcc + -Ofast" },
     { "avx2_final_gcc_unroll", memcpy_avx2_final_gcc_unroll, NULL,

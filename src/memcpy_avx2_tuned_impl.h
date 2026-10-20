@@ -89,6 +89,43 @@
 #define TUNED_SMALL_PATH 0
 #endif
 
+/* Optional (F1): branch-layout hints on the two dispatch branches.
+ *
+ * The 128/256 B deficit of the small-path builds is NOT caused by these
+ * branches - the alignment test is only reached at n > 512 and the tiny test is
+ * only taken at n <= 64 - but F1 was asked for and has to be priced rather than
+ * argued about. With this at 1 the tiny test is marked UNLIKELY (so the tiny
+ * block is laid out off the hot fall-through) and the alignment test is marked
+ * LIKELY, which is the arrangement the harness's 64 B-aligned buffers produce. */
+#ifndef TUNED_EXPECT
+#define TUNED_EXPECT 0
+#endif
+
+/* Optional (F4): a straight-line kernel for the 128..256 B window, reached by
+ * ONE unsigned compare before the flat-class chain.
+ *
+ * This is the only one of the four F attempts that is aimed at the mechanism the
+ * disassembly shows: at 128 B the small-path builds run the tiny test, the 512 B
+ * test, two 32 B moves, a 256 B test and a jmp before finishing, where the
+ * original fused kernel ran two tests and a straight-line block pair. A class
+ * that is entered from one compare and then has no branches at all cannot pay
+ * that dispatch.
+ *
+ * Correctness: the window is 128 <= n <= 256, and T_BLOCKPAIR(4) covers [0,128)
+ * + [n-128,n) with n-128 >= 0, so nothing outside [0,n) is touched; n < 128 and
+ * n > 256 fall through to the existing code. */
+#ifndef TUNED_WINDOW
+#define TUNED_WINDOW 0
+#endif
+
+#if TUNED_EXPECT
+#define T_UNLIKELY(c) (UNLIKELY(c))
+#define T_LIKELY(c)   (LIKELY(c))
+#else
+#define T_UNLIKELY(c) (c)
+#define T_LIKELY(c)   (c)
+#endif
+
 #include <immintrin.h>
 #include <stdint.h>
 #include "common.h"
@@ -147,7 +184,7 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
 
 #if TUNED_SMALL_PATH
     /* ---- V9b: the tiny classes, reached in ONE compare ------------------- */
-    if (n <= 64) {
+    if (T_UNLIKELY(n <= 64)) {
         if (n < 16) {
             if (n >= 8) {
                 uint64_t a, b;
@@ -168,6 +205,14 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
         }
         if (n < 32) { T_MOVE16(0); T_MOVE16(n - 16); return dst; }
         T_MOVE16(0); T_MOVE16(16); T_MOVE16(n - 32); T_MOVE16(n - 16);
+        return dst;
+    }
+#endif
+
+#if TUNED_WINDOW
+    /* ---- F4: 128..256 B, one compare, then no branches at all ------------ */
+    if ((size_t)(n - 128) <= 128u) {
+        T_BLOCKPAIR(4);
         return dst;
     }
 #endif
@@ -223,7 +268,7 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
      * 64 B-aligned buffers, so this branch is 100% predicted in practice; it is
      * still a real runtime check, not an assumption, and the unaligned fallback
      * is the same loop with unaligned accesses. */
-    if ((((uintptr_t)s | (uintptr_t)d) & 31u) == 0u) {
+    if (T_LIKELY((((uintptr_t)s | (uintptr_t)d) & 31u) == 0u)) {
         for (; i + TUNED_BLOCK <= n; i += TUNED_BLOCK) {
             if (pf && n >= (size_t)TUNED_PF_MIN) {
                 _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
