@@ -1,0 +1,120 @@
+# log=results/phase2_6_k8_znver2.windows.log  baseline=glibc  op=memset  windows=9  rep_lines=4680  migrated_dropped=0
+# null band = |naive vs ref_scalar| in THESE windows (same byte loop, identical instruction streams)
+# columns: size impl min_of_mins_ns gbps cpb delta_vs_glibc_pct rule3 band tier floor tier_verdict spread_pct windows
+# band 16 = NOT MEASURED (naive/ref_scalar absent)
+16 ref_scalar 6.6 2.4374 2.0170 -163.20 LOSS n/a A 1.5 LOSS 9.53 9
+16 glibc 2.5 6.4151 0.7336 +0.00 - - A 1.5 - 0.00 9
+16 memset_naive 6.6 2.4374 1.5436 -163.20 LOSS n/a A 1.5 LOSS 0.00 9
+16 memset_word 7.2 2.2252 2.1490 -188.30 LOSS n/a A 1.5 LOSS 0.00 9
+16 memset_sse2 7.2 2.2252 2.0334 -188.30 LOSS n/a A 1.5 LOSS 0.00 9
+16 memset_avx2 2.8 5.6988 0.9411 -12.57 LOSS n/a A 1.5 LOSS 5.57 9
+16 memset_avx2_nt 3.1 5.1264 0.9368 -25.14 LOSS n/a A 1.5 LOSS 0.00 9
+16 memset_asm 2.8 5.6988 0.9710 -12.57 LOSS n/a A 1.5 LOSS 0.00 9
+# band 32 = NOT MEASURED (naive/ref_scalar absent)
+32 ref_scalar 12.2 2.6229 1.5630 -389.16 LOSS n/a A 1.5 LOSS 0.00 9
+32 glibc 2.5 12.8303 0.4813 +0.00 - - A 1.5 - 0.00 9
+32 memset_naive 12.2 2.6229 2.0080 -389.16 LOSS n/a A 1.5 LOSS 0.00 9
+32 memset_word 3.4 9.3197 0.4521 -37.67 LOSS n/a A 1.5 LOSS 0.00 9
+32 memset_sse2 3.4 9.3197 0.4418 -37.67 LOSS n/a A 1.5 LOSS 0.00 9
+32 memset_avx2 4.7 6.8281 0.6427 -87.90 LOSS n/a A 1.5 LOSS 0.00 9
+32 memset_avx2_nt 4.7 6.8281 0.6008 -87.90 LOSS n/a A 1.5 LOSS 0.00 9
+32 memset_asm 2.5 12.8303 0.4064 +0.00 measured n/a A 1.5 measured 0.00 9
+# band 64 = NOT MEASURED (naive/ref_scalar absent)
+64 ref_scalar 22.2 2.8804 1.5834 -790.85 LOSS n/a A 1.5 LOSS 0.00 9
+64 glibc 2.5 25.6606 0.1996 +0.00 - - A 1.5 - 0.00 9
+64 memset_naive 22.2 2.8804 1.4583 -790.85 LOSS n/a A 1.5 LOSS 0.00 9
+64 memset_word 5.3 12.0471 0.3643 -113.00 LOSS n/a A 1.5 LOSS 0.00 9
+64 memset_sse2 3.4 18.6393 0.2368 -37.67 LOSS n/a A 1.5 LOSS 0.00 9
+64 memset_avx2 5.3 12.0471 0.4063 -113.00 LOSS n/a A 1.5 LOSS 0.00 9
+64 memset_avx2_nt 5.3 12.0471 0.3585 -113.00 LOSS n/a A 1.5 LOSS 0.00 9
+64 memset_asm 2.8 22.7953 0.2197 -12.57 LOSS n/a A 1.5 LOSS 0.00 9
+# band 128 = NOT MEASURED (naive/ref_scalar absent)
+128 ref_scalar 47.6 2.6909 1.5996 -1600.75 LOSS n/a A 1.5 LOSS 0.00 9
+128 glibc 2.8 45.7650 0.1006 +0.00 - - A 1.5 - 0.00 9
+128 memset_naive 47.6 2.6909 1.6972 -1600.75 LOSS n/a A 1.5 LOSS 0.00 9
+128 memset_word 7.8 16.3964 0.2874 -179.12 LOSS n/a A 1.5 LOSS 0.00 9
+128 memset_sse2 3.7 34.2585 0.1377 -33.59 LOSS n/a A 1.5 LOSS 0.00 9
+128 memset_avx2 5.1 24.8713 0.1724 -84.01 LOSS n/a A 1.5 LOSS 0.00 9
+128 memset_avx2_nt 5.3 24.1386 0.1771 -89.59 LOSS n/a A 1.5 LOSS 0.00 9
+128 memset_asm 3.1 41.1404 0.1028 -11.24 LOSS n/a A 1.5 LOSS 0.00 9
+# band 256 = NOT MEASURED (naive/ref_scalar absent)
+256 ref_scalar 87.6 2.9215 1.5405 -2475.46 LOSS n/a A 1.5 LOSS 0.00 9
+256 glibc 3.4 75.2432 0.0698 +0.00 - - B 25.0 - 36.85 9
+256 memset_naive 87.6 2.9215 1.5938 -2475.46 LOSS n/a A 1.5 LOSS 0.00 9
+256 memset_word 13.4 19.0733 0.2309 -294.49 LOSS n/a A 1.5 LOSS 0.00 9
+256 memset_sse2 5.3 48.4738 0.0937 -55.22 LOSS n/a B 25.0 LOSS 11.83 9
+256 memset_avx2 5.9 43.3443 0.0925 -73.59 LOSS n/a A 1.5 LOSS 0.00 9
+256 memset_avx2_nt 5.9 43.3443 0.1008 -73.59 LOSS n/a A 1.5 LOSS 0.00 9
+256 memset_asm 3.4 75.2432 0.0652 +0.00 measured n/a B 25.0 measured 36.85 9
+# band 512 = NOT MEASURED (naive/ref_scalar absent)
+512 ref_scalar 167.7 3.0524 1.5609 -2962.75 LOSS n/a A 1.5 LOSS 0.00 9
+512 glibc 5.5 93.4887 0.0587 +0.00 - - A 1.5 - 0.00 9
+512 memset_naive 167.7 3.0524 1.4766 -2962.75 LOSS n/a A 1.5 LOSS 0.00 9
+512 memset_word 23.4 21.8818 0.1791 -327.24 LOSS n/a A 1.5 LOSS 0.00 9
+512 memset_sse2 10.2 49.9512 0.0809 -87.16 LOSS n/a A 1.5 LOSS 0.00 9
+512 memset_avx2 7.7 66.1311 0.0744 -41.37 LOSS n/a A 1.5 LOSS 0.00 9
+512 memset_avx2_nt 7.4 68.9126 0.0692 -35.66 LOSS n/a A 1.5 LOSS 0.00 9
+512 memset_asm 5.6 92.1742 0.0618 -1.43 measured n/a A 1.5 measured 0.00 9
+# band 1024 = NOT MEASURED (naive/ref_scalar absent)
+1024 ref_scalar 328.0 3.1224 1.4903 -3075.35 LOSS n/a A 1.5 LOSS 0.00 9
+1024 glibc 10.3 99.1470 0.0466 +0.00 - - A 1.5 - 0.00 9
+1024 memset_naive 328.0 3.1224 1.6095 -3075.35 LOSS n/a A 1.5 LOSS 0.00 9
+1024 memset_word 48.7 21.0388 0.2225 -371.26 LOSS n/a A 1.5 LOSS 0.03 9
+1024 memset_sse2 20.2 50.7245 0.0768 -95.46 LOSS n/a A 1.5 LOSS 0.00 9
+1024 memset_avx2 11.4 89.6523 0.0673 -10.59 LOSS n/a A 1.5 LOSS 0.00 9
+1024 memset_avx2_nt 11.4 89.6523 0.0570 -10.59 LOSS n/a A 1.5 LOSS 0.00 9
+1024 memset_asm 10.6 96.2352 0.0618 -3.03 LOSS n/a A 1.5 LOSS 0.00 9
+# band 4096 = NOT MEASURED (naive/ref_scalar absent)
+4096 ref_scalar 1289.2 3.1770 1.6805 -3118.10 LOSS n/a A 1.5 LOSS 0.00 9
+4096 glibc 40.1 102.2402 0.0425 +0.00 - - A 1.5 - 0.00 9
+4096 memset_naive 1289.2 3.1770 1.2453 -3118.10 LOSS n/a A 1.5 LOSS 0.05 9
+4096 memset_word 168.4 24.3176 0.1951 -320.44 LOSS n/a A 1.5 LOSS 0.00 9
+4096 memset_sse2 80.1 51.1201 0.0744 -100.00 LOSS n/a A 1.5 LOSS 0.00 9
+4096 memset_avx2 42.6 96.2349 0.0442 -6.24 LOSS n/a B 25.0 measured 19.09 9
+4096 memset_avx2_nt 42.6 96.2349 0.0454 -6.24 LOSS n/a A 1.5 LOSS 0.00 9
+4096 memset_asm 40.7 100.6697 0.0437 -1.56 LOSS n/a A 1.5 LOSS 0.00 9
+# band 16384 = NOT MEASURED (naive/ref_scalar absent)
+16384 ref_scalar 5137.0 3.1894 1.5439 -3008.62 LOSS n/a A 1.5 LOSS 0.00 9
+16384 glibc 165.2 99.1467 0.0430 +0.00 - - A 1.5 - 0.00 9
+16384 memset_naive 5134.8 3.1908 1.4999 -3007.26 LOSS n/a A 1.5 LOSS 0.04 9
+16384 memset_word 648.5 25.2645 0.1624 -292.44 LOSS n/a A 1.5 LOSS 0.00 9
+16384 memset_sse2 323.0 50.7245 0.0782 -95.46 LOSS n/a A 1.5 LOSS 0.00 9
+16384 memset_avx2 170.2 96.2349 0.0436 -3.03 LOSS n/a A 1.5 LOSS 8.81 9
+16384 memset_avx2_nt 170.2 96.2349 0.0460 -3.03 LOSS n/a A 1.5 LOSS 8.96 9
+16384 memset_asm 167.8 97.6692 0.0411 -1.51 LOSS n/a A 1.5 LOSS 0.00 9
+# band 65536 = NOT MEASURED (naive/ref_scalar absent)
+65536 ref_scalar 20518.0 3.1941 1.4170 -3051.77 LOSS n/a A 1.5 LOSS 0.10 9
+65536 glibc 651.0 100.6697 0.0380 +0.00 - - B 25.0 - 27.65 9
+65536 memset_naive 20529.0 3.1924 1.2803 -3053.46 LOSS n/a A 1.5 LOSS 0.05 9
+65536 memset_word 2564.0 25.5601 0.1878 -293.86 LOSS n/a A 1.5 LOSS 0.00 9
+65536 memset_sse2 1292.0 50.7245 0.0746 -98.46 LOSS n/a A 1.5 LOSS 0.08 9
+65536 memset_avx2 641.0 102.2402 0.0469 +1.54 WIN n/a A 1.5 WIN 0.00 9
+65536 memset_avx2_nt 641.0 102.2402 0.0470 +1.54 WIN n/a A 1.5 WIN 0.00 9
+65536 memset_asm 641.0 102.2402 0.0401 +1.54 WIN n/a A 1.5 WIN 1.56 9
+# band 262144 = NOT MEASURED (naive/ref_scalar absent)
+262144 ref_scalar 82084.0 3.1936 1.3719 -3051.02 LOSS n/a A 1.5 LOSS 0.15 9
+262144 glibc 2605.0 100.6311 0.0360 +0.00 - - B 25.0 - 13.44 9
+262144 memset_naive 82104.0 3.1928 1.6272 -3051.79 LOSS n/a A 1.5 LOSS 0.09 9
+262144 memset_word 10259.0 25.5526 0.1948 -293.82 LOSS n/a A 1.5 LOSS 0.30 9
+262144 memset_sse2 5179.0 50.6167 0.0750 -98.81 LOSS n/a A 1.5 LOSS 0.98 9
+262144 memset_avx2 2564.0 102.2402 0.0444 +1.57 WIN n/a B 25.0 measured 13.30 9
+262144 memset_avx2_nt 2564.0 102.2402 0.0451 +1.57 WIN n/a B 25.0 measured 13.30 9
+262144 memset_asm 2574.0 101.8430 0.0446 +1.19 measured n/a B 25.0 measured 14.41 9
+# band 1048576 = NOT MEASURED (naive/ref_scalar absent)
+1048576 ref_scalar 328977.0 3.1874 1.4530 -2093.47 LOSS n/a A 1.5 LOSS 0.21 9
+1048576 glibc 14998.0 69.9144 0.0562 +0.00 - - A 1.5 - 1.00 9
+1048576 memset_naive 328917.0 3.1880 1.5340 -2093.07 LOSS n/a A 1.5 LOSS 0.05 9
+1048576 memset_word 41558.0 25.2316 0.2005 -177.09 LOSS n/a A 1.5 LOSS 0.31 9
+1048576 memset_sse2 21040.0 49.8373 0.0772 -40.29 LOSS n/a A 1.5 LOSS 0.33 9
+1048576 memset_avx2 14968.0 70.0545 0.0546 +0.20 measured n/a A 1.5 measured 0.67 9
+1048576 memset_avx2_nt 50124.0 20.9196 0.1700 -234.20 LOSS n/a A 1.5 LOSS 3.72 9
+1048576 memset_asm 14989.0 69.9564 0.0548 +0.06 measured n/a A 1.5 measured 2.33 9
+# band 4194304 = NOT MEASURED (naive/ref_scalar absent)
+4194304 ref_scalar 1342206.0 3.1249 1.2391 -1968.05 LOSS n/a B 25.0 LOSS 10.24 9
+4194304 glibc 64902.0 64.6252 0.0612 +0.00 - - A 1.5 - 3.35 9
+4194304 memset_naive 1336596.0 3.1380 1.5643 -1959.41 LOSS n/a B 25.0 LOSS 14.83 9
+4194304 memset_word 166933.0 25.1257 0.2074 -157.21 LOSS n/a A 1.5 LOSS 1.77 9
+4194304 memset_sse2 84138.0 49.8503 0.0870 -29.64 LOSS n/a A 1.5 LOSS 1.31 9
+4194304 memset_avx2 64662.0 64.8651 0.0641 +0.37 measured n/a A 1.5 measured 2.65 9
+4194304 memset_avx2_nt 206287.0 20.3324 0.1716 -217.84 LOSS n/a A 1.5 LOSS 2.81 9
+4194304 memset_asm 65112.0 64.4168 0.0633 -0.32 measured n/a A 1.5 measured 2.52 9
