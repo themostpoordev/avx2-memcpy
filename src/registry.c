@@ -173,6 +173,10 @@ const impl_t g_impls[] = {
       "P4: as avx2_mid with the head peel removed - the measured value of explicit cache-line split handling (only MID_PEEL differs)" },
     { "avx2_mid_ntpf", memcpy_avx2_mid_ntpf, NULL,
       "P3: as avx2_mid with prefetchnta on the source at 256 KiB and up (only MID_NTPF differs)" },
+    { "avx2_mid_pm", memcpy_avx2_mid_pm, NULL,
+      "P1 take 2: as avx2_mid with the head peel gated at 4 KiB (only MID_PEEL_MIN differs) - the candidate if it wins" },
+    { "avx2_mid_u4pf1", memcpy_avx2_mid_u4pf1, NULL,
+      "P1 diagnostic: unroll 4 with ONE prefetch stream (MID_PF2 = 0) - prices prefetch density against block size for the u4 anomaly" },
 };
 
 const size_t g_impl_count = sizeof g_impls / sizeof g_impls[0];

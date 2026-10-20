@@ -110,6 +110,8 @@ void *memcpy_avx2_mid_pf1(void *dst, const void *src, size_t n);    /* P2: one s
 void *memcpy_avx2_mid_pfnear(void *dst, const void *src, size_t n); /* P2: +2/+4 lines */
 void *memcpy_avx2_mid_nopeel(void *dst, const void *src, size_t n); /* P4: no head peel */
 void *memcpy_avx2_mid_ntpf(void *dst, const void *src, size_t n);   /* P3: NTA src prefetch >= 256 KiB */
+void *memcpy_avx2_mid_pm(void *dst, const void *src, size_t n);     /* P1b: peel gated at 4 KiB (candidate) */
+void *memcpy_avx2_mid_u4pf1(void *dst, const void *src, size_t n);  /* P1 diagnostic: unroll 4, one stream */
 
 /* Probe-only rungs: -flto and PGO are link-time properties, so they are built
  * into bench/<t>_perf6 (see the Makefile's perf6 rules) and only that binary

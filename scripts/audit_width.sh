@@ -96,6 +96,7 @@ declared_bits() {
         memcpy_avx2_mid_gcc.c|memcpy_avx2_mid_u4_gcc.c)              echo 256 ;;
         memcpy_avx2_mid_pf1_gcc.c|memcpy_avx2_mid_pfnear_gcc.c)      echo 256 ;;
         memcpy_avx2_mid_nopeel_gcc.c|memcpy_avx2_mid_ntpf_gcc.c)     echo 256 ;;
+        memcpy_avx2_mid_pm_gcc.c|memcpy_avx2_mid_u4pf1_gcc.c)        echo 256 ;;
         # Phase 2.6 V6/V7 probe TUs (src/perf6/, built only by `make
         # perf6probe-<t>`): -flto and PGO variants of the fused final kernel.
         # Same body, same 32 B moves, so the same declaration, and the loop below

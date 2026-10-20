@@ -98,6 +98,16 @@
 #ifndef MID_NT_SIZE
 #define MID_NT_SIZE 262144
 #endif
+/* Size below which the head peel is skipped (0 = always peel).
+ *
+ * The peel is only worth its cost when the loop runs long enough for the store
+ * lines to matter; at 1 KiB the measurement says it is not (see the p3mid
+ * campaign: the peeled rung is 4.22% behind glibc at 1 KiB while the unpeeled one
+ * is 1.41% ahead, on all three targets). This knob is that finding turned into a
+ * threshold, and the rung that uses it declares the size it starts at. */
+#ifndef MID_PEEL_MIN
+#define MID_PEEL_MIN 0
+#endif
 
 #include <immintrin.h>
 #include <stdint.h>
@@ -140,7 +150,14 @@ void *MID_FN(void *dst, const void *src, size_t n)
     /* ---- head peel: bounded, never leaves [0,r) --------------------------- */
     size_t r = 0;
 #if MID_PEEL
-    r = (size_t)(0u - (uintptr_t)d) & 63u;
+    /* MID_PEEL_MIN is a compile-time threshold, so a rung that always peels must
+     * not carry a `n >= 0` test: it would be dead code and a -Wtype-limits
+     * warning on a TU whose whole point is that its instruction stream is what
+     * the neighbour's is not. */
+#if MID_PEEL_MIN > 0
+    if (n >= (size_t)MID_PEEL_MIN)
+#endif
+        r = (size_t)(0u - (uintptr_t)d) & 63u;
     if (r >= 32) {
         M_MOVE32(0);
         M_MOVE32(r - 32);

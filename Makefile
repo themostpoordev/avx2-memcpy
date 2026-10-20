@@ -146,6 +146,8 @@ GCC_EXTRA_memcpy_avx2_mid_pf1_gcc.c       := -fno-crossjumping
 GCC_EXTRA_memcpy_avx2_mid_pfnear_gcc.c    := -fno-crossjumping
 GCC_EXTRA_memcpy_avx2_mid_nopeel_gcc.c    := -fno-crossjumping
 GCC_EXTRA_memcpy_avx2_mid_ntpf_gcc.c      := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_pm_gcc.c        := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_u4pf1_gcc.c     := -fno-crossjumping
 
 # NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
 # consumed by make, not by the shell (the same trap documented for `snapshot`).
