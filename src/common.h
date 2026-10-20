@@ -97,6 +97,20 @@ void *memcpy_avx2_final_f3_notest(void *dst, const void *src, size_t n); /* F3: 
 void *memcpy_avx2_final_f4_win(void *dst, const void *src, size_t n);    /* F4: V9c + 128..256 B window */
 void *memcpy_avx2_final_ifunc(void *dst, const void *src, size_t n);     /* F2: same body via IFUNC */
 
+/* --- Phase 3 P1: the mid-range kernel (1 KiB .. 64 KiB) -------------------
+ * One body (src/memcpy_avx2_mid_impl.h) with one knob changed per rung, so the
+ * measured pair delta is that knob. mid is the candidate; the other five price
+ * unroll 8 against unroll 4 (u4), two streams against one (pf1) and against the
+ * brief's literal +2/+4 line distances (pfnear), the head peel (nopeel) and the
+ * NTA source prefetch above 256 KiB (ntpf).
+ */
+void *memcpy_avx2_mid(void *dst, const void *src, size_t n);        /* P1: unroll 8, 2 streams, peel */
+void *memcpy_avx2_mid_u4(void *dst, const void *src, size_t n);     /* P1 control: unroll 4 */
+void *memcpy_avx2_mid_pf1(void *dst, const void *src, size_t n);    /* P2: one stream */
+void *memcpy_avx2_mid_pfnear(void *dst, const void *src, size_t n); /* P2: +2/+4 lines */
+void *memcpy_avx2_mid_nopeel(void *dst, const void *src, size_t n); /* P4: no head peel */
+void *memcpy_avx2_mid_ntpf(void *dst, const void *src, size_t n);   /* P3: NTA src prefetch >= 256 KiB */
+
 /* Probe-only rungs: -flto and PGO are link-time properties, so they are built
  * into bench/<t>_perf6 (see the Makefile's perf6 rules) and only that binary
  * defines PERF6_PROBE. The declarations are guarded so the normal binaries can

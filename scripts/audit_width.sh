@@ -89,6 +89,13 @@ declared_bits() {
         # F1-F4 (the 128/256 B pass): same body, same 32 B moves.
         memcpy_avx2_final_f1_gcc.c|memcpy_avx2_final_f3_gcc.c)      echo 256 ;;
         memcpy_avx2_final_f4_gcc.c|memcpy_avx2_final_ifunc_gcc.c)   echo 256 ;;
+        # Phase 3 P1: the mid-range rungs share one body (256 B/iter of 32 B
+        # moves) and differ only in the MID_* knobs, none of which change the
+        # width - declared per file so a new mid rung cannot inherit a width
+        # nobody checked.
+        memcpy_avx2_mid_gcc.c|memcpy_avx2_mid_u4_gcc.c)              echo 256 ;;
+        memcpy_avx2_mid_pf1_gcc.c|memcpy_avx2_mid_pfnear_gcc.c)      echo 256 ;;
+        memcpy_avx2_mid_nopeel_gcc.c|memcpy_avx2_mid_ntpf_gcc.c)     echo 256 ;;
         # Phase 2.6 V6/V7 probe TUs (src/perf6/, built only by `make
         # perf6probe-<t>`): -flto and PGO variants of the fused final kernel.
         # Same body, same 32 B moves, so the same declaration, and the loop below

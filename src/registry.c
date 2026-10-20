@@ -154,6 +154,25 @@ const impl_t g_impls[] = {
       "K8 rung 5: non-temporal stores above 1 MiB, with a dst-alignment prologue and sfence" },
     { "memset_asm", NULL, memset_asm,
       "K8 rung 6: hand-written AVX2 fill, same shape as rung 4" },
+
+    /* ---- Phase 3 P1: the mid-range push (1 KiB .. 64 KiB) -----------------
+     * Not ladder rungs: six candidates for the one band the deliverable is only
+     * level at. All six route n < 1024 to the Phase 2.6 deliverable's own body,
+     * so the pair deltas below are confined to 1 KiB and up and the certified
+     * 16-512 B wins are not in play. Reference row for every delta: `mid`
+     * against glibc, and each variant against `mid` for its own knob. */
+    { "avx2_mid", memcpy_avx2_mid, NULL,
+      "P1: dedicated 1 KiB-64 KiB kernel - 256 B/iter (unroll 8), 64 B head peel, two prefetch streams (one and two blocks ahead)" },
+    { "avx2_mid_u4", memcpy_avx2_mid_u4, NULL,
+      "P1 control: as avx2_mid at unroll 4 (128 B/iter), streams scaled to one and two blocks ahead (only MID_UNROLL/MID_PF differ)" },
+    { "avx2_mid_pf1", memcpy_avx2_mid_pf1, NULL,
+      "P2: as avx2_mid with the second prefetch stream removed (only MID_PF2 differs)" },
+    { "avx2_mid_pfnear", memcpy_avx2_mid_pfnear, NULL,
+      "P2: as avx2_mid with the brief's literal distances, +128/+256 B (only MID_PF1/MID_PF2 differ)" },
+    { "avx2_mid_nopeel", memcpy_avx2_mid_nopeel, NULL,
+      "P4: as avx2_mid with the head peel removed - the measured value of explicit cache-line split handling (only MID_PEEL differs)" },
+    { "avx2_mid_ntpf", memcpy_avx2_mid_ntpf, NULL,
+      "P3: as avx2_mid with prefetchnta on the source at 256 KiB and up (only MID_NTPF differs)" },
 };
 
 const size_t g_impl_count = sizeof g_impls / sizeof g_impls[0];

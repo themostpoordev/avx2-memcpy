@@ -137,6 +137,15 @@ GCC_EXTRA_memcpy_avx2_final_f1_gcc.c      := -fno-crossjumping
 GCC_EXTRA_memcpy_avx2_final_f3_gcc.c      := -fno-crossjumping
 GCC_EXTRA_memcpy_avx2_final_f4_gcc.c      := -fno-crossjumping
 GCC_EXTRA_memcpy_avx2_final_ifunc_gcc.c   := -fno-crossjumping
+# Phase 3 P1: the mid-range rungs are all measured against V9c, so they carry the
+# same one flag. Each of the six differs from its neighbour only in the MID_*
+# knob set in its own source, never in flags.
+GCC_EXTRA_memcpy_avx2_mid_gcc.c           := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_u4_gcc.c        := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_pf1_gcc.c       := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_pfnear_gcc.c    := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_nopeel_gcc.c    := -fno-crossjumping
+GCC_EXTRA_memcpy_avx2_mid_ntpf_gcc.c      := -fno-crossjumping
 
 # NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
 # consumed by make, not by the shell (the same trap documented for `snapshot`).
