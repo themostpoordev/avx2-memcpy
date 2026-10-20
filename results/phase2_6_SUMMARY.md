@@ -252,8 +252,11 @@ the code). The same campaign's `-flto` build measured 119 676 ns, the plain buil
 that share two of three knobs. Nothing at 4 MiB in this push is a claim.
 
 Census for the whole campaign: 468 rung × size × target rows, **10 certified
-wins, 139 certified losses (all of them `ref_scalar`/`naive` above 128 B), 280
-"measured"**. That ratio is the instrument, not the kernel.
+wins, 139 certified losses, 280 "measured"**. Of the 139 losses, 132 are
+`ref_scalar` and `naive` (every size); the rest are the fused rungs at 16/32/
+64 B and exactly one outside the tiny class — `avx2_final_gcc_ofast` at 128 B,
+−2.53% against a 1.5% Tier-A floor. That composition is the instrument, not the
+kernel.
 
 ## 11. V9b — the tiny class, fixed from one compare
 
@@ -306,11 +309,11 @@ step):
 | 512 B | 5.9 | 6.0 | −2.66% | LOSS (one timer step) |
 | 1 KB…1 MiB | equal | equal | 0.00% | measured |
 
-Against glibc, V9c certifies **16 B +38.02%, 32 B +12.92%, 64 B +12.92%, 512 B
-+13.47%** on all three targets, and **1 MiB +11.21% / +9.95% / +9.99%** (Tier A
-in `v9c`'s windows), while 128 B is −20.09% (certified on all three) and 256 B is
-−15.88%/−16.93% (certified on znver2 and v3; Tier B, i.e. not a claim, on
-znver3).
+Against glibc, V9c certifies **16 B +38.02% / +37.62% / +38.02%, 32 B +12.92% on
+all three, 64 B +12.92%, 512 B +13.47% / +13.47% / +14.59%**, and **1 MiB
++11.21% / +9.95% / +9.99%** (Tier A in `v9c`'s windows), while 128 B is −20.09%
+(certified on all three) and 256 B is −15.88%/−16.93% (certified on znver2 and
+v3; Tier B, i.e. not a claim, on znver3).
 
 So the cross-jumping hypothesis was **wrong for 256 B** — the straight-line pair
 is there and 256 B is still 4.3 ns — and right for 32/64 B, which gained a timer
@@ -328,19 +331,22 @@ What it certifiably does against glibc, on all three targets:
 
 | 16 B | 32 B | 64 B | 128 B | 256 B | 512 B | 1 KiB | 4 KiB | 16 KiB | 64 KiB | 1 MiB | 4 MiB |
 |--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| **+38%** | **+13%** | **+13%** | −20% | −16%¹ | **+13%** | 0% | 0% | 0% | 0% | **+10%** | not usable |
+| **+38%** | **+13%** | **+13%** | −20% | −16%¹ | **+13%** | 0% | −1.5%² | 0% | 0% | **+10%** | not usable |
 
 ¹ certified on znver2 and v3, Tier B (not a claim) on znver3.
+² −1.51% on znver3 only (Tier A, floor 1.5, so certified); 0.00% on znver2 and
+v3. Every other size from 1 KiB to 64 KiB is inside ±1.5%, i.e. measured.
 
 Bold = certified (tier floor exceeded). "0%" is "measured": level, and that
 level-ness is itself the result — glibc's 4×32 B loop is the same loop.
 "not usable" is the protocol's verdict on 4 MiB in these windows.
 
 What it certifiably loses: 128 B by 0.6 ns (two timer steps) and 256 B by 0.6 ns
-(one step). Both are dispatch-level costs of the tiny-class fix, both are
-reproducible across `v9b` and `v9c`, and both are disclosed rather than tuned
-away. If 128–256 B matters more than 16 B, the alternative is
-`avx2_final_v2_gcc` (V9b: 128 B −10%, 256 B −8.5%, 32/64 B only level).
+(one step), plus one 1.51% step at 4 KiB on znver3. The first two are
+dispatch-level costs of the tiny-class fix, both are reproducible across `v9b`
+and `v9c`, and both are disclosed rather than tuned away. If 128–256 B matters
+more than 16 B, the alternative is `avx2_final_v2_gcc` (V9b: 128 B −10%, 256 B
+−8.5%, 32/64 B only level).
 
 What this push established, in one sentence each:
 
@@ -350,9 +356,10 @@ What this push established, in one sentence each:
   reproducing it statically, 1.5 ns vs 1.9 ns.
 * Unroll 8/12 and the aligned loop are not justified by any certified result.
 * Prefetch cannot be resolved on this host; it is kept gated, as a guard.
-* The fused kernel is ~10% ahead at 1 MiB and level from 1 KiB to 64 KiB; its
-  only remaining certified deficits are 128 B and 256 B, both self-inflicted by
-  the fix that removed the 16–64 B deficits.
+* The fused kernel is ~10% ahead at 1 MiB and level (±1.5%) from 1 KiB to
+  64 KiB; its only certified deficits are 128 B and 256 B, both self-inflicted by
+  the fix that removed the 16–64 B deficits, and one 1.51% step at 4 KiB on
+  znver3.
 
 Open items, in the order they would be worth someone's time:
 

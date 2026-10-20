@@ -237,9 +237,10 @@ So the cross-jumping hypothesis was right for 32/64 B (a timer step each) and
 WRONG for 256 B: the straight-line pair is there and 256 B is still 4.3 ns. The
 128-256 B cost is the dispatch level itself, not the merged heads - the same
 conclusion V9b's own numbers point to, now confirmed by a build that removes the
-merge. Against glibc, V9c certifies 16 B +38.02%, 32 B +12.92%, 64 B +12.92%,
-512 B +13.47% and 1 MiB +11.21/+9.95/+9.99%, and loses 128 B by 0.6 ns
-(certified) and 256 B by 0.6 ns (certified on two targets).
+merge. Against glibc, V9c certifies 16 B +38.02/+37.62/+38.02%, 32 B +12.92% (all
+three), 64 B +12.92%, 512 B +13.47/+13.47/+14.59% and 1 MiB
++11.21/+9.95/+9.99%, and loses 128 B by 0.6 ns (certified on all three) and
+256 B by 0.6 ns (certified on two of three).
 
 The consolidated report (results/phase2_6_SUMMARY.md) recommends V9c, because
 32/64 B are the sizes a memcpy actually meets most often and it certifies wins
