@@ -1,0 +1,133 @@
+# log=results/phase2_6_f128b_v3.windows.log  baseline=glibc  op=memcpy  windows=9  rep_lines=5265  migrated_dropped=0
+# null band = |naive vs ref_scalar| in THESE windows (same byte loop, identical instruction streams)
+# columns: size impl min_of_mins_ns gbps cpb delta_vs_glibc_pct rule3 band tier floor tier_verdict spread_pct windows
+# band 16 = 0.00%
+16 ref_scalar 6.6 2.4374 1.5596 -163.20 LOSS LOSS A 1.5 LOSS 0.00 9
+16 glibc 2.5 6.4151 0.6060 +0.00 - - A 1.5 - 0.00 9
+16 naive 6.6 2.4374 1.7887 -163.20 LOSS LOSS A 1.5 LOSS 0.00 9
+16 avx2_final_v2_gcc_noxj 1.5 10.3500 0.3725 +38.02 WIN WIN A 1.5 WIN 0.63 9
+16 avx2_final_f1 2.5 6.4151 0.7013 +0.00 measured measured A 1.5 measured 0.00 9
+16 avx2_final_f3_notest 1.6 10.2848 0.4148 +37.62 WIN WIN A 1.5 WIN 0.00 9
+16 avx2_final_f4_win 1.5 10.3500 0.3708 +38.02 WIN WIN A 1.5 WIN 0.63 9
+16 avx2_final_ifunc 1.5 10.3500 0.3756 +38.02 WIN WIN A 1.5 WIN 0.63 9
+16 rep 3.4 4.6598 0.9758 -37.67 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 32 = 0.08%
+32 ref_scalar 12.2 2.6229 1.6639 -389.16 LOSS LOSS A 1.5 LOSS 0.81 9
+32 glibc 2.5 12.8303 0.3722 +0.00 - - A 1.5 - 0.00 9
+32 naive 12.2 2.6208 1.8936 -389.56 LOSS LOSS A 1.5 LOSS 0.81 9
+32 avx2_final_v2_gcc_noxj 2.2 14.7336 0.2906 +12.92 WIN WIN A 1.5 WIN 0.45 9
+32 avx2_final_f1 2.8 11.3976 0.4015 -12.57 LOSS LOSS A 1.5 LOSS 0.00 9
+32 avx2_final_f3_notest 2.2 14.7336 0.2775 +12.92 WIN WIN A 1.5 WIN 0.45 9
+32 avx2_final_f4_win 1.9 17.2191 0.2090 +25.49 WIN WIN A 1.5 WIN 0.53 9
+32 avx2_final_ifunc 2.2 14.7336 0.2644 +12.92 WIN WIN A 1.5 WIN 0.45 9
+32 rep 4.7 6.8281 0.7224 -87.90 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 64 = 5.74%
+64 ref_scalar 23.5 2.7188 1.5505 -843.83 LOSS LOSS A 5.7 LOSS 7.23 9
+64 glibc 2.5 25.6606 0.1859 +0.00 - - A 5.7 - 0.00 9
+64 naive 24.9 2.5713 1.5356 -897.98 LOSS LOSS A 5.7 LOSS 0.59 9
+64 avx2_final_v2_gcc_noxj 2.2 29.4673 0.1378 +12.92 WIN WIN A 5.7 WIN 0.00 9
+64 avx2_final_f1 2.8 22.8669 0.2101 -12.22 LOSS LOSS A 5.7 LOSS 0.31 9
+64 avx2_final_f3_notest 2.2 29.4673 0.1270 +12.92 WIN WIN A 5.7 WIN 0.45 9
+64 avx2_final_f4_win 1.9 34.2576 0.1178 +25.10 WIN WIN A 5.7 WIN 0.00 9
+64 avx2_final_ifunc 2.2 29.4673 0.1410 +12.92 WIN WIN A 5.7 WIN 0.45 9
+64 rep 7.8 8.1869 0.5282 -213.44 LOSS LOSS A 5.7 LOSS 0.00 9
+# band 128 = 0.00%
+128 ref_scalar 47.6 2.6909 1.6885 -1428.89 LOSS LOSS A 1.5 LOSS 0.00 9
+128 glibc 3.1 41.1404 0.1439 +0.00 - - A 1.5 - 0.00 9
+128 naive 47.6 2.6909 1.7258 -1428.89 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_final_v2_gcc_noxj 3.7 34.2585 0.1511 -20.09 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_final_f1 3.1 41.3998 0.1171 +0.63 measured measured A 1.5 measured 0.63 9
+128 avx2_final_f3_notest 3.7 34.2585 0.1826 -20.09 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_final_f4_win 3.4 37.3854 0.1356 -10.04 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_final_ifunc 3.7 34.2585 0.1667 -20.09 LOSS LOSS A 1.5 LOSS 0.00 9
+128 rep 13.4 9.5228 0.5010 -332.02 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 256 = 0.00%
+256 ref_scalar 87.6 2.9215 1.3342 -2258.81 LOSS LOSS A 1.5 LOSS 0.04 9
+256 glibc 3.7 68.9135 0.0761 +0.00 - - A 1.5 - 0.00 9
+256 naive 87.6 2.9215 1.7197 -2258.81 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_final_v2_gcc_noxj 4.3 59.4699 0.0715 -15.88 LOSS LOSS A 1.5 LOSS 0.91 9
+256 avx2_final_f1 3.7 68.9135 0.0627 +0.00 measured measured A 1.5 measured 0.00 9
+256 avx2_final_f3_notest 4.3 58.9346 0.0783 -16.93 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_final_f4_win 3.4 75.2432 0.0665 +8.41 WIN WIN A 1.5 WIN 0.00 9
+256 avx2_final_ifunc 4.3 59.4699 0.0785 -15.88 LOSS LOSS A 1.5 LOSS 0.91 9
+256 rep 21.5 11.8940 0.3184 -479.40 LOSS LOSS A 1.5 LOSS 0.18 9
+# band 512 = 0.00%
+512 ref_scalar 167.7 3.0524 1.6639 -2309.67 LOSS LOSS A 1.5 LOSS 0.05 9
+512 glibc 7.0 73.5537 0.0687 +0.00 - - A 1.5 - 0.00 9
+512 naive 167.7 3.0524 1.4869 -2309.67 LOSS LOSS A 1.5 LOSS 0.00 9
+512 avx2_final_v2_gcc_noxj 5.9 86.1184 0.0595 +14.59 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_final_f1 5.9 87.2648 0.0638 +15.71 WIN WIN A 1.5 WIN 1.33 9
+512 avx2_final_f3_notest 5.9 87.2648 0.0502 +15.71 WIN WIN A 1.5 WIN 1.33 9
+512 avx2_final_f4_win 5.9 87.2648 0.0513 +15.71 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_final_ifunc 5.9 86.1184 0.0569 +14.59 WIN WIN A 1.5 WIN 0.00 9
+512 rep 23.9 21.3821 0.1727 -244.00 LOSS LOSS A 1.5 LOSS 0.33 9
+# band 1024 = 0.00%
+1024 ref_scalar 328.0 3.1224 1.5676 -2852.03 LOSS LOSS A 1.5 LOSS 0.10 9
+1024 glibc 11.1 92.1742 0.0512 +0.00 - - A 1.5 - 0.00 9
+1024 naive 328.0 3.1224 1.5724 -2852.03 LOSS LOSS A 1.5 LOSS 0.10 9
+1024 avx2_final_v2_gcc_noxj 11.1 92.1742 0.0630 +0.00 measured measured A 1.5 measured 0.00 9
+1024 avx2_final_f1 11.3 90.8962 0.0508 -1.41 measured measured A 1.5 measured 0.00 9
+1024 avx2_final_f3_notest 11.1 92.1742 0.0560 +0.00 measured measured A 1.5 measured 0.00 9
+1024 avx2_final_f4_win 11.3 90.8962 0.0527 -1.41 measured measured A 1.5 measured 0.00 9
+1024 avx2_final_ifunc 11.1 92.1742 0.0504 +0.00 measured measured A 1.5 measured 0.00 9
+1024 rep 28.8 35.5594 0.1066 -159.21 LOSS LOSS A 1.5 LOSS 0.54 9
+# band 4096 = 0.05%
+4096 ref_scalar 1292.4 3.1692 1.5645 -3028.44 LOSS LOSS B 25.0 LOSS 25.19 9
+4096 glibc 41.3 99.1467 0.0416 +0.00 - - B 25.0 - 22.69 9
+4096 naive 1291.8 3.1707 1.4851 -3026.93 LOSS LOSS B 25.0 LOSS 25.21 9
+4096 avx2_final_v2_gcc_noxj 41.3 99.1467 0.0444 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_final_f1 41.3 99.1467 0.0438 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_final_f3_notest 41.3 99.1467 0.0467 +0.00 measured measured A 1.5 measured 1.51 9
+4096 avx2_final_f4_win 41.3 99.1467 0.0432 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_final_ifunc 41.3 99.1467 0.0462 +0.00 measured measured A 1.5 measured 0.00 9
+4096 rep 57.6 71.1574 0.0640 -39.33 LOSS LOSS A 1.5 LOSS 1.09 9
+# band 16384 = 0.08%
+16384 ref_scalar 6527.2 2.5101 1.5739 -3004.52 LOSS LOSS A 1.5 LOSS 3.18 9
+16384 glibc 210.2 77.9263 0.0516 +0.00 - - A 1.5 - 2.50 9
+16384 naive 6522.2 2.5120 1.6092 -3002.14 LOSS LOSS A 1.5 LOSS 2.88 9
+16384 avx2_final_v2_gcc_noxj 213.0 76.9202 0.0728 -1.31 measured measured A 1.5 measured 1.17 9
+16384 avx2_final_f1 212.8 77.0106 0.0622 -1.19 measured measured A 1.5 measured 1.29 9
+16384 avx2_final_f3_notest 210.2 77.9263 0.0670 +0.00 measured measured A 1.5 measured 3.57 9
+16384 avx2_final_f4_win 213.0 76.9202 0.0636 -1.31 measured measured A 1.5 measured 2.23 9
+16384 avx2_final_ifunc 212.8 77.0106 0.0593 -1.19 measured measured A 1.5 measured 2.35 9
+16384 rep 220.2 74.3882 0.0539 -4.76 LOSS LOSS A 1.5 LOSS 2.38 9
+# band 65536 = 0.00%
+65536 ref_scalar 25758.0 2.5443 1.5460 -1957.35 LOSS LOSS A 1.5 LOSS 4.13 9
+65536 glibc 1252.0 52.3450 0.0760 +0.00 - - A 1.5 - 0.80 9
+65536 naive 25758.0 2.5443 1.6172 -1957.35 LOSS LOSS A 1.5 LOSS 3.70 9
+65536 avx2_final_v2_gcc_noxj 1262.0 51.9303 0.0700 -0.80 measured measured A 1.5 measured 0.00 9
+65536 avx2_final_f1 1262.0 51.9303 0.0752 -0.80 measured measured A 1.5 measured 0.00 9
+65536 avx2_final_f3_notest 1252.0 52.3450 0.0691 +0.00 measured measured A 1.5 measured 0.80 9
+65536 avx2_final_f4_win 1253.0 52.3033 0.0725 -0.08 measured measured A 1.5 measured 0.72 9
+65536 avx2_final_ifunc 1252.0 52.3450 0.0698 +0.00 measured measured A 1.5 measured 0.80 9
+65536 rep 1272.0 51.5220 0.0863 -1.60 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 262144 = 1.64%
+262144 ref_scalar 105849.0 2.4766 1.6239 -1885.91 LOSS LOSS A 1.6 LOSS 3.45 9
+262144 glibc 5330.0 49.1827 0.0767 +0.00 - - A 1.6 - 7.52 9
+262144 naive 104115.0 2.5178 1.7631 -1853.38 LOSS LOSS A 1.6 LOSS 5.14 9
+262144 avx2_final_v2_gcc_noxj 5250.0 49.9322 0.0841 +1.50 WIN measured A 1.6 measured 9.73 9
+262144 avx2_final_f1 5240.0 50.0275 0.0778 +1.69 WIN WIN B 25.0 measured 12.42 9
+262144 avx2_final_f3_notest 5240.0 50.0275 0.0813 +1.69 WIN WIN A 1.6 WIN 5.53 9
+262144 avx2_final_f4_win 5230.0 50.1231 0.0805 +1.88 WIN WIN B 25.0 measured 11.68 9
+262144 avx2_final_ifunc 5240.0 50.0275 0.0804 +1.69 WIN WIN B 25.0 measured 13.19 9
+262144 rep 10700.0 24.4994 0.1930 -100.75 LOSS LOSS B 25.0 LOSS 21.44 9
+# band 1048576 = 0.00%
+1048576 ref_scalar 436659.0 2.4014 1.7390 -1592.54 LOSS LOSS A 1.5 LOSS 3.03 9
+1048576 glibc 25799.0 40.6441 0.0934 +0.00 - - A 1.5 - 4.42 9
+1048576 naive 436678.0 2.4013 1.5147 -1592.62 LOSS LOSS A 1.5 LOSS 2.45 9
+1048576 avx2_final_v2_gcc_noxj 23655.0 44.3279 0.0948 +8.31 WIN WIN B 25.0 measured 16.81 9
+1048576 avx2_final_f1 23584.0 44.4613 0.0934 +8.59 WIN WIN B 25.0 measured 16.61 9
+1048576 avx2_final_f3_notest 23594.0 44.4425 0.0946 +8.55 WIN WIN B 25.0 measured 16.52 9
+1048576 avx2_final_f4_win 23664.0 44.3110 0.0929 +8.28 WIN WIN B 25.0 measured 18.21 9
+1048576 avx2_final_ifunc 23725.0 44.1971 0.0939 +8.04 WIN WIN B 25.0 measured 17.31 9
+1048576 rep 67657.0 15.4984 0.2842 -162.25 LOSS LOSS B 25.0 LOSS 17.00 9
+# band 4194304 = 3.10%
+4194304 ref_scalar 1865497.0 2.2484 1.5657 -1405.87 LOSS LOSS A 3.1 LOSS 5.25 9
+4194304 glibc 123882.0 33.8573 0.1395 +0.00 - - B 25.0 - 51.06 9
+4194304 naive 1807619.0 2.3203 1.5172 -1359.15 LOSS LOSS B 25.0 LOSS 12.62 9
+4194304 avx2_final_v2_gcc_noxj 127168.0 32.9824 0.1342 -2.65 LOSS measured B 25.0 measured 26.64 9
+4194304 avx2_final_f1 129262.0 32.4481 0.1216 -4.34 LOSS LOSS B 25.0 measured 13.39 9
+4194304 avx2_final_f3_notest 129843.0 32.3029 0.1846 -4.81 LOSS LOSS B 25.0 measured 17.80 9
+4194304 avx2_final_f4_win 130054.0 32.2505 0.1444 -4.98 LOSS LOSS B 25.0 measured 14.73 9
+4194304 avx2_final_ifunc 125325.0 33.4674 0.1264 -1.16 measured measured B 25.0 measured 18.56 9
+4194304 rep 301606.0 13.9066 0.2982 -143.46 LOSS LOSS B 25.0 LOSS 23.81 9
