@@ -114,6 +114,10 @@ declared_bits() {
         # Phase 3 P5: the mid-range asm twin - 32 B moves, same as the C it twins.
         memcpy_avx2_mid_asm.S)                                      echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;
+        # Phase 3 Task 1's dispatcher: same treatment as memcpy_hybrid.c -
+        # the dispatcher branch below requires the declared width to EQUAL the
+        # max width of the rungs it routes to (mid_pm and v2_gcc_noxj, both 256).
+        memcpy_avx2_mid_disp_gcc.c)                                 echo 256 ;;
         *)                                                          echo ""  ;;
     esac
 }
