@@ -186,8 +186,62 @@ knobs are V1 (gcc), V3 (32 B-aligned main loop), V4 (unroll 4), V5 (prefetch
   25% slower at 16-32 B. The tiny class is the one real regression, and V9b
   exists to price its cause.
 
-V9b (campaign in flight, tag v9b): avx2_final_v2_gcc - identical to
-avx2_final_gcc except TUNED_SMALL_PATH 1, which takes n <= 64 from one compare
-and copies kernel 4's measured small shape. Control is avx2_final_gcc in the same
-windows; the prediction from V7 is 16/32 B at ~1.9-2.2 ns and no movement at
-256 B..4 MiB. Results go in the consolidated report, not here.
+V9b (campaign tag v9b, 2026-10-20 06:17:07 -> 06:26:04): avx2_final_v2_gcc -
+identical to avx2_final_gcc except TUNED_SMALL_PATH 1, which takes n <= 64 from
+ONE compare and copies kernel 4's measured small shape. Control is avx2_final_gcc
+measured in the same windows, so the pair delta is the knob.
+
+  size      znver2                znver3                v3
+  16 B      +51.61% (3.1->1.5)   +51.61%               +55.88% (3.4->1.5)
+  32 B      +19.35% (3.1->2.5)   +19.35%               +10.71% (2.8->2.5)
+  64 B      +19.35% (3.1->2.5)   +19.35%               +19.35% (3.1->2.5)
+  128 B      -3.03% (3.3->3.4)    -3.03%                -6.25% (3.2->3.4)
+  256 B     -17.65% (3.4->4.0)   -17.65%               -26.47% (3.4->4.3)
+  512 B..64 KB  0.00% at every size on every target (the control is intact)
+  1 MiB      -3.17%               +0.39%                +0.73%
+
+Against glibc in the v9b campaign, avx2_final_v2_gcc reads:
+  16 B  1.5 ns  +38.02%  Tier A, spread 0.63  -> WIN on all three targets
+  32 B  2.5 ns   +0.39%  Tier A, spread 0.39  -> measured (level with glibc)
+  64 B  2.5 ns   +0.39%  Tier A, spread 0.39  -> measured (level with glibc)
+  128 B 3.4 ns  -10.04%  Tier A             -> LOSS, one timer step
+  256 B 4.0 ns   -8.52%  Tier B (25% floor)  -> measured
+  512 B 5.9 ns  +15.71%  Tier A             -> WIN
+  1 MiB 23.1 us +10.33%  Tier A (znver2), +12.02% Tier A (v3) -> WIN
+
+The 16 B result is the single largest certified win in the whole Phase 2.6
+push: +38% over glibc where the fused kernel was -25%, and it beats PGO's 1.9 ns
+(1.5 ns) without a profile in the build. The prediction from V7 - that the loss
+was the entry chain, not the copies - held on all three targets.
+
+What it cost, and why: 128 B moved one timer step (3.3 -> 3.4 ns) and 256 B
+moved from 3.4 ns to 4.0/4.3 ns. The object says why, and it is not the copies:
+gcc cross-jumped the head of T_BLOCKPAIR(2) (64..128 B) with the head of
+T_BLOCKPAIR(4) (256..512 B), so at n = 256 the function now runs two 32 B moves,
+a compare, two more moves and a jmp
+(bench/bench_znver2: memcpy_avx2_final_v2_gcc +0x1c0 -> +0x2f0 -> +0x27b) instead
+of one straight-line block pair. That is a code-layout consequence of the chain
+and is the subject of V9c.
+
+V9c (campaign tag v9c, 2026-10-20 06:39:04 -> 06:47:12): avx2_final_v2_gcc_noxj -
+identical to V9b, built with -fno-crossjumping, the smallest knob that forbids
+that merge. Its object has the straight-line block pair back at 256 B
+(+0x210: cmp $0x100, jbe, then 4 head + 4 tail moves, no mid-path jump).
+
+Pair against V9b (same windows): 16 B 0.00%; 32 B 2.5 -> 2.2 ns (+12.58%, WIN);
+64 B 2.5 -> 2.2 ns (+12.58%, WIN); 128 B 3.4 -> 3.7 (-9.13%, LOSS); 256 B
+4.0 -> 4.3 (-6.78%, LOSS); 512 B 5.9 -> 6.0 (-2.66%, one timer step); 1 KB..
+1 MiB equal.
+
+So the cross-jumping hypothesis was right for 32/64 B (a timer step each) and
+WRONG for 256 B: the straight-line pair is there and 256 B is still 4.3 ns. The
+128-256 B cost is the dispatch level itself, not the merged heads - the same
+conclusion V9b's own numbers point to, now confirmed by a build that removes the
+merge. Against glibc, V9c certifies 16 B +38.02%, 32 B +12.92%, 64 B +12.92%,
+512 B +13.47% and 1 MiB +11.21/+9.95/+9.99%, and loses 128 B by 0.6 ns
+(certified) and 256 B by 0.6 ns (certified on two targets).
+
+The consolidated report (results/phase2_6_SUMMARY.md) recommends V9c, because
+32/64 B are the sizes a memcpy actually meets most often and it certifies wins
+there while V9b only reaches parity, and it discloses the 128-256 B cost as a
+dispatch-level trade rather than presenting the fix as free.
