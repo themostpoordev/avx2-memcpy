@@ -134,11 +134,26 @@ const impl_t g_impls[] = {
       "V7: fused final rebuilt with -fprofile-use over the harness's own ladder (probe binary only)" },
 #endif
 
-    /* ---- Phase 2 rest of the ladder -------------------------------------
-    { "memset_sse2", memset_sse2, NULL, "kernel 8: memset ladder" },
-    { "rep",     memcpy_rep,     memset_rep,     "rep movsb/stosb, size-gated" },
-    { "memset_naive", ... }  ... reported as the memset ladder (kernel 8)
-    ---------------------------------------------------------------------- */
+    /* ---- Kernel 7 and the Kernel 8 memset ladder -------------------------
+     * K7 is evidence, not a promotion candidate: this host has no ERMS/FSRM, so
+     * rep movsb is microcoded and the prediction is that it loses everywhere
+     * below the bandwidth cliff. The memset ladder mirrors the memcpy one rung
+     * for rung, so each pair (naive/naive, word/word, sse2/sse2, avx2/avx2,
+     * nt/nt, asm/asm) is a same-shape comparison across the two operations. */
+    { "rep", memcpy_rep, NULL,
+      "K7: rep movsb for n >= 256 B, kernel 2's word loop below the gate (no ERMS/FSRM on this host)" },
+    { "memset_naive", NULL, memset_naive,
+      "K8 rung 1: byte-at-a-time fill" },
+    { "memset_word", NULL, memset_word,
+      "K8 rung 2: 8-byte stores + byte tail" },
+    { "memset_sse2", NULL, memset_sse2,
+      "K8 rung 3: 16-byte stores, unrolled 4x (forced 128-bit wide)" },
+    { "memset_avx2", NULL, memset_avx2,
+      "K8 rung 4: 32-byte stores, unrolled 4x, overlapping tail" },
+    { "memset_avx2_nt", NULL, memset_avx2_nt,
+      "K8 rung 5: non-temporal stores above 1 MiB, with a dst-alignment prologue and sfence" },
+    { "memset_asm", NULL, memset_asm,
+      "K8 rung 6: hand-written AVX2 fill, same shape as rung 4" },
 };
 
 const size_t g_impl_count = sizeof g_impls / sizeof g_impls[0];

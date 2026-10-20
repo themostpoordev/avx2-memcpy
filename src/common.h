@@ -46,6 +46,15 @@ void *memcpy_avx2_pf2(void *dst, const void *src, size_t n); /* kernel 4, prefet
 void *memcpy_avx2_pf4(void *dst, const void *src, size_t n); /* kernel 4, prefetch +4 lines */
 void *memcpy_avx2_nt(void *dst, const void *src, size_t n);  /* kernel 5, non-temporal stores */
 void *memcpy_asm(void *dst, const void *src, size_t n);      /* kernel 6, hand-written AVX2 asm */
+void *memcpy_rep(void *dst, const void *src, size_t n);      /* kernel 7, size-gated rep movsb */
+
+/* --- Kernel 8: the memset ladder (mirror of the memcpy rungs) ------------- */
+void *memset_naive(void *dst, int c, size_t n);              /* kernel 8, rung 1 */
+void *memset_word(void *dst, int c, size_t n);               /* kernel 8, rung 2 */
+void *memset_sse2(void *dst, int c, size_t n);               /* kernel 8, rung 3 */
+void *memset_avx2(void *dst, int c, size_t n);               /* kernel 8, rung 4 */
+void *memset_avx2_nt(void *dst, int c, size_t n);            /* kernel 8, rung 5, NT above 1 MiB */
+void *memset_asm(void *dst, int c, size_t n);                /* kernel 8, rung 6, hand-written AVX2 asm */
 
 /* --- Phase 2.5: hybrid dispatcher ----------------------------------------
  * Routes each call to the rung that measured fastest at that size, per target.

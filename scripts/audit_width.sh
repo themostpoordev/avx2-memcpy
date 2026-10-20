@@ -95,6 +95,13 @@ declared_bits() {
         # checks them in the object they were actually compiled into.
         memcpy_avx2_final_lto.c|memcpy_avx2_final_pgo.c)             echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                             echo 256 ;;
+        memset_naive.c)                                             echo 8 ;;
+        memset_word.c)                                              echo 64 ;;
+        memset_sse2.c)                                              echo 128 ;;
+        # K7: the word loop below the gate is 64-bit; rep movsb itself is not a
+        # data-movement instruction with a width the audit can see, so the
+        # declaration describes the widest *instruction* in the TU.
+        memcpy_rep.c)                                               echo 64 ;;
         memcpy_asm.S|memset_asm.S)                                  echo 256 ;;
         memcpy_hybrid.c)                                            echo 256 ;;
         *)                                                          echo ""  ;;

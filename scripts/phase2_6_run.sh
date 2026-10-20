@@ -42,7 +42,10 @@ for t in $TARGETS; do
     printf '=== target %s start %s\n' "$t" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$PROG"
     rc=0
     if [ "${PROBE:-0}" = "1" ]; then bin="./bench/bench_${t}_perf6"; else bin=""; fi
-    BIN="$bin" ITERS=4000 RUN_TO_CAP=1 sh scripts/mo_measure.sh "$t" "$IMPLS" memcpy "$SIZES" \
+    # OP lets the same driver measure the memset ladder (Kernel 8) with the same
+    # sizes, windows, pin and gate. Default stays memcpy so every earlier tag is
+    # reproducible byte for byte.
+    BIN="$bin" ITERS=4000 RUN_TO_CAP=1 sh scripts/mo_measure.sh "$t" "$IMPLS" "${OP:-memcpy}" "$SIZES" \
         "results/phase2_6_${TAG}_${t}.windows.log" 9 9 >> "$PROG" 2>&1 || rc=$?
     printf '=== target %s end rc=%s %s\n' "$t" "$rc" "$(date '+%Y-%m-%d %H:%M:%S')" >> "$PROG"
 done

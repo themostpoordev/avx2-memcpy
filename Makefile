@@ -37,7 +37,8 @@ TARGETS := znver2 znver3 v3
 # Kernels whose loops MUST stay scalar. clang -O3 -march=znver2 turns a byte
 # loop into a 4x32B vmovups loop otherwise, which would make a "naive" baseline
 # silently be an AVX2 kernel and make every comparison meaningless.
-SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c src/memcpy_word.c
+SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c src/memcpy_word.c \
+                src/memcpy_rep.c src/memset_naive.c src/memset_word.c
 SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 
 # Kernel 3 must really be 128-bit SSE2: the ladder's point is that rung 3 is 16B-wide
@@ -48,7 +49,7 @@ SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 # forces the legacy 128-bit encodings (movdqu) and keeps the ladder monotonic;
 # the AVX2 rung that follows is built with AVX enabled, so rung3-vs-rung4 measures
 # exactly the width step it is supposed to.
-SSE2_SRCS  := src/memcpy_sse2.c
+SSE2_SRCS  := src/memcpy_sse2.c src/memset_sse2.c
 SSE2_FLAGS := -mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize -fno-vectorize
 
 # Any new src/*.c kernel is picked up automatically (no Makefile edit per kernel).
@@ -243,6 +244,11 @@ audit: $(BINS)
 	    printf '  %-34s vector_insns=%-4s %s\n' "$$src" "$$n" "$$mark"; \
 	    if [ -n "$$must" ] && [ "$$n" != "0" ]; then \
 	      echo "  ERROR: $$src is in SCALAR_SRCS but has $$n vector instruction line(s)"; fail=1; \
+	    fi; \
+	    evex=$$(objdump -d $$o | awk '/^[[:space:]]*[0-9a-f]+:\t62 /' | wc -l); \
+	    if [ "$$evex" != "0" ]; then \
+	      echo "  ERROR: $$src has $$evex EVEX(0x62)-prefixed instruction(s): AVX-512 on an AVX2-only target is SIGILL"; \
+	      objdump -d $$o | awk '/^[[:space:]]*[0-9a-f]+:\t62 /' | head -3; fail=1; \
 	    fi; \
 	  done; \
 	done; \
