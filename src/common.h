@@ -82,6 +82,7 @@ void *memcpy_avx2_final_gcc_unroll(void *dst, const void *src, size_t n); /* V6:
 void *memcpy_avx2_final_gcc_noplt(void *dst, const void *src, size_t n);  /* V6: -fno-plt */
 void *memcpy_avx2_final_noomit(void *dst, const void *src, size_t n);     /* V6: -fno-omit-frame-pointer */
 void *memcpy_avx2_final_v2_gcc(void *dst, const void *src, size_t n);    /* V9b: one-compare small path */
+void *memcpy_avx2_final_v2_gcc_noxj(void *dst, const void *src, size_t n); /* V9c: V9b + -fno-crossjumping */
 
 /* Probe-only rungs: -flto and PGO are link-time properties, so they are built
  * into bench/<t>_perf6 (see the Makefile's perf6 rules) and only that binary

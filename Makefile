@@ -126,6 +126,10 @@ GCC_EXTRA_memcpy_avx2_final_gcc_noplt.c  := -fno-plt
 # cannot be measured by adding it. This rung forces it OFF instead: if it is
 # slower by X%, the flag is worth X%. (See the source header.)
 GCC_EXTRA_memcpy_avx2_final_gcc_noomit.c := -fno-omit-frame-pointer
+# V9c: V9b's small path costs 256 B one step because gcc cross-jumped the
+# T_BLOCKPAIR(2) and T_BLOCKPAIR(4) heads (see the source header). This rung
+# forbids that one transform and nothing else.
+GCC_EXTRA_memcpy_avx2_final_v2_gcc_noxj.c := -fno-crossjumping
 
 # NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
 # consumed by make, not by the shell (the same trap documented for `snapshot`).

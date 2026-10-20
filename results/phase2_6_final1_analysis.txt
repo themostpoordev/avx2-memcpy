@@ -1,0 +1,193 @@
+Phase 2.6 campaign "final1" - analysis (V6 flags, V7 PGO, V9 fused kernel)
+=========================================================================
+
+What was measured
+-----------------
+Tag final1, 2026-10-16 18:59:26 -> 19:15:51, three targets (znver2, znver3, v3),
+5 reps x 9 windows (RUN_TO_CAP=1), 13-point ladder, taskset -c 2, iters 4000.
+Driver: scripts/phase2_6_run.sh; raw logs results/phase2_6_final1_<target>.windows.log;
+tables results/phase2_6_final1_<target>.matrix.txt (scripts/phase2_6_matrix.sh,
+baseline glibc). 0 migrated reps were dropped in any window.
+
+The campaign ran PROBE=0 on the normal binaries except that the two link-time
+rungs (-flto, PGO) are rows of bench/<t>_perf6, so all twelve rungs were measured
+inside ONE binary per target: the -flto and PGO objects sit next to their
+non-flagged twins in the same process, in the same windows (protocol rule 4).
+That is the honest control for a flag: the only difference between
+avx2_final_gcc and avx2_final_pgo is how that one object was compiled.
+
+Impls: ref_scalar, naive, glibc, avx2_final (clang), avx2_final_gcc,
+avx2_final16_gcc, avx2_final_gcc_ofast, avx2_final_gcc_unroll,
+avx2_final_gcc_noplt, avx2_final_noomit, avx2_final_lto, avx2_final_pgo.
+
+Read this first: the null band
+-----------------------------
+The band column is |naive vs ref_scalar| at that size - two translation units
+holding the same byte loop with byte-identical instruction streams. It is the
+measurement artefact, not a result, and it is large at exactly the sizes where
+the AVX2 rungs are fast: 4.35% at 16 B, 9.51% at 64 B, 20.22% at 4 KB. Tier A
+needs a per-key spread <= 10%; most keys here are Tier B (25% flat floor), which
+means the protocol cannot certify anything smaller than 25% at those sizes. That
+is why so many rows below read "measured" rather than WIN/LOSS - it is the
+protocol refusing a claim, not a missing measurement. Nothing in this file
+upgrades a "measured" row to a win in prose.
+
+Certified outcomes, whole campaign
+----------------------------------
+468 rung x size x target rows.
+
+  WIN        10
+  LOSS      139
+  measured  280   (inside the applicable floor: max(1.5%, band) for Tier A, 25% for Tier B)
+  -          39   (the glibc baseline rows themselves)
+
+All ten certified wins:
+
+  znver2  avx2_final_pgo       16 B   +25.10%  Tier A (floor 4.3, spread 3.71)
+  znver2  avx2_final_pgo       32 B   +25.10%  Tier A (floor 2.4, spread 5.28)
+  znver2  avx2_final          512 B   +16.83%  Tier A (floor 1.5, spread 1.35)
+  znver2  avx2_final_lto      512 B   +15.71%  Tier A (floor 1.5, spread 1.33)
+  znver3  avx2_final_pgo       16 B   +25.20%  Tier A (floor 9.6, spread 4.26)
+  znver3  avx2_final_pgo       32 B   +25.20%  Tier A (floor 5.0, spread 6.36)
+  v3      avx2_final_pgo       16 B   +25.20%  Tier B (floor 25.0, spread 16.34) - at the floor
+  v3      avx2_final_pgo       32 B   +25.49%  Tier A (floor 1.5, spread 2.68)
+  v3      avx2_final_gcc      512 B   +16.83%  Tier A (floor 1.5, spread 1.35)
+  v3      avx2_final16_gcc    512 B   +16.83%  Tier A (floor 1.5, spread 1.35)
+
+Every LOSS at 128 B and above is ref_scalar or naive; no AVX2 rung lost at
+128 B..4 MiB except avx2_final_lto at 128 B (-10.04%, znver2). The only sizes
+where the fused kernel itself loses are 16, 32 and 64 B.
+
+Per-size table (min_of_mins ns, delta vs glibc, tier)
+----------------------------------------------------
+                          znver2                 znver3                 v3
+  16 B
+    glibc                  2.5                   2.5                   2.5
+    avx2_final             3.1  -25.14% A        3.1  -25.23% A        3.7  -50.43% A
+    avx2_final_gcc         3.1  -25.14% A        3.1  -25.23% A        3.4  -38.21% A
+    avx2_final_gcc_unroll  3.7  -50.24% A        3.7  -50.39% A        3.7  -48.02% A
+    avx2_final_lto         3.4  -37.67% A        3.4  -37.81% A        3.7  -50.43% A
+    avx2_final_pgo         1.9  +25.10% A        1.9  +25.20% A        1.9  +25.20% B
+  32 B
+    glibc                  2.5                   2.5                   2.5
+    avx2_final             3.1  -25.14% B        3.1  -25.23% B        3.1  -24.75% A
+    avx2_final_gcc         3.1  -25.14% B        3.1  -25.23% B        2.8  -12.18% A
+    avx2_final_lto         2.8  -12.57% B        2.8  -12.62% B        3.4  -37.28% B
+    avx2_final_pgo         1.9  +25.10% A        1.9  +25.20% A        1.9  +25.49% A
+  64 B
+    glibc                  2.5                   2.5                   2.5
+    avx2_final             3.1  -25.14% B        3.1  -25.23% A        3.1  -24.75% B
+    avx2_final_gcc         3.1  -25.14% B        3.1  -25.23% B        3.1  -24.75% A
+    avx2_final_pgo         2.8  -12.57% B        2.8  -12.62% B        2.8  -12.57% B
+  128 B
+    glibc                  3.1                   3.1                   3.1
+    avx2_final             3.1   0.00% B        3.1   0.00% B        3.2  -5.05% B
+    avx2_final_gcc         3.3  -5.02% B        3.2  -5.05% B        3.2  -3.16% B
+    avx2_final_pgo         2.8  +10.11% B        2.8  +10.17% A        2.8  +9.54% B
+  256 B
+    glibc                  3.7                   3.7                   3.7
+    avx2_final             3.4  +8.41% B        3.4  +8.50% B        3.4  +7.44% B
+    (every fused rung identical: 3.4 ns; the knobs do not reach this size)
+  512 B
+    glibc                  7.0                   6.9                   7.0
+    avx2_final             5.8  +16.83% A        5.7  +17.03% B        5.8  +16.83% B
+    avx2_final_gcc         5.9  +15.71% B        5.8  +15.89% B        5.8  +16.83% A
+  1024 B
+    glibc                 11.1                  11.0                  11.1
+    avx2_final            11.4   -2.81% B       11.3   -2.85% B       12.0   -8.44% B
+    avx2_final_gcc        11.3   -1.41% B       11.1   -1.43% B       11.1    0.00% A
+  4096 B
+    glibc                 41.3                  40.7                  41.3
+    every fused rung     41.3   0.00% B       40.7   0.00% B       40.7 +1.51% B
+  16384 B
+    glibc                207.8                 207.8                 210.2
+    avx2_final           220.2   -6.02% B      220.2   -6.02% B      220.5   -4.88% B
+    avx2_final_gcc       212.8   -2.41% B      210.5   -1.32% B      210.2    0.00% B
+  65536 B
+    glibc               1262.0                1242.0                1262.0
+    avx2_final           1262.0   0.00% A      1252.0   -0.81% A      1252.0   +0.79% A
+  262144 B
+    glibc               5280.0                5250.0                5270.0
+    avx2_final           5280.0   0.00% B      5230.0   +0.38% B      5300.0   -0.57% A
+  1048576 B
+    glibc              25828.0               25609.0               26530.0
+    avx2_final         23674.0  +8.34% B     24116.0   +5.83% B     23093.0  +12.96% B
+    avx2_final_gcc     23775.0  +7.95% B     23514.0   +8.18% B     23655.0  +10.84% B
+  4194304 B
+    glibc             115548.0              115988.0              127481.0
+    avx2_final         107292.0  +7.15% B    110008.0   +5.16% B    123833.0   +2.86% B
+    avx2_final_gcc     119044.0  -3.03% B    116180.0   -0.17% B    119746.0   +6.07% B
+
+Verdicts
+--------
+V6, compiler flags on the adopted compiler (gcc). Each rung is avx2_final_gcc
+plus exactly one flag, and the pair deltas (B faster than A, per target) are:
+
+  -Ofast           0.00% at every size from 16 B to 512 B and at 64 KB on all
+                   three targets; the only movement is +-4% at 4 MiB, where the
+                   spread is 25% (Tier B). It compiles the same bytes. REJECTED:
+                   no measurable gain, and it licenses FP reassociation the
+                   kernel does not want.
+  -funroll-loops   0.00% or small LOSSES: -19.35% at 16 B, -10.71% at 32 B,
+                   -5.12% at 1 MiB (worst case over the three targets).
+                   REJECTED - it actively hurts the tiny class.
+  -fno-plt         0.00% at 16..512 B; +3.07% at 1 MiB and +15.15% at 4 MiB,
+                   both inside Tier B where 25% is the floor. The control rung
+                   for a kernel that makes no calls: nothing to see. REJECTED
+                   (not demonstrably useful; keeps PLT indirection for callers).
+  -fno-omit-frame- 0.00% at 16..512 B, -3.55% at 4 MiB. REJECTED: the flag is
+   pointer         already on in OPT for every rung, and forcing it off is not
+                   faster anywhere, so it buys nothing - but the experiment was
+                   worth running, because "keeps a register" was the hypothesis.
+  -flto            0.00% at most sizes, but -9.68% at 16 B, -6.25% at 128 B,
+                   and -21.43% at 32 B on v3 against +9.68% on znver3 (the sign
+                   flips across targets, so it is noise, not a gain). One
+                   certified win: 512 B on znver2 (+15.71%, Tier A). A single
+                   win at one target out of three does not adopt a link-time
+                   build requirement. REJECTED for the deliverable; the rung
+                   stays in the probe binary as the record.
+
+  Short version: no compiler flag earned its place. The fused kernel keeps the
+  plain gcc flag set, and V1's gcc adoption is the only build change that
+  survived.
+
+V7, PGO (-fprofile-generate over the size ladder, then -fprofile-use). The only
+change in the whole campaign that moved the tiny class in the right direction,
+on all three targets and in the same direction:
+
+  16 B    1.9 ns vs 3.1 ns for the same source without the profile (+25% over
+          glibc, certified Tier A on znver2 and znver3, Tier B at the floor on v3)
+  32 B    1.9 ns vs 3.1 ns (+25.1/+25.2/+25.5%, certified Tier A on all three)
+  64 B    2.8 ns vs 3.1 ns (-12.6% vs glibc, still a loss, unchanged verdict)
+  128 B   2.8 ns vs 3.3 ns (the one size where PGO buys a tie with glibc)
+  256 B..4 MiB  unchanged - the profile does not touch the loop.
+
+  What it means: the 25% loss at 16-64 B was never in the copies. PGO's only
+  relevant action here is to move the cold size classes out of the hot path,
+  which is a statement about the ENTRY CHAIN (six compares before the tiny case
+  is reached), not about code generation quality. PGO is NOT adopted: it needs a
+  profile build per target, and it is the wrong fix for the right diagnosis -
+  see V9b, which does the same thing statically.
+
+V9, the fused kernel (clang build avx2_final, gcc build avx2_final_gcc). The
+knobs are V1 (gcc), V3 (32 B-aligned main loop), V4 (unroll 4), V5 (prefetch
++128 B, only at 64 KB and up), V8 (flat overlap classes, no tail branch).
+
+  Certified: 512 B +16.83% on znver2 (clang) and on v3 (gcc and final16_gcc).
+  Measured but below the floor: +8.4% at 256 B, +15.7..17.0% at 512 B on the
+  remaining target/rung pairs, +7.9..10.8% at 1 MiB. 4 MiB is unusable in this
+  campaign (spread 25%, and the clang and gcc builds of the same knobs differ by
+  10 points in opposite directions - that is the window, not the code).
+  Certified LOSS: 16 B (-25.1%, Tier A, all three targets), 32/64 B (-25%/
+  -12.5%, mostly Tier B).
+
+  So the honest V9 verdict: the fused kernel is level with glibc from 1 KB to
+  64 KB, faster at 256 B and 512 B, faster at 1 MiB by ~8% (uncertified), and
+  25% slower at 16-32 B. The tiny class is the one real regression, and V9b
+  exists to price its cause.
+
+V9b (campaign in flight, tag v9b): avx2_final_v2_gcc - identical to
+avx2_final_gcc except TUNED_SMALL_PATH 1, which takes n <= 64 from one compare
+and copies kernel 4's measured small shape. Control is avx2_final_gcc in the same
+windows; the prediction from V7 is 16/32 B at ~1.9-2.2 ns and no movement at
+256 B..4 MiB. Results go in the consolidated report, not here.
