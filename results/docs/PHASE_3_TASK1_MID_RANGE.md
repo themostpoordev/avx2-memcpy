@@ -124,8 +124,8 @@ silicon) at a second kernel, which is what the task asked for.
 
 ## Housekeeping
 
-- `src/memcpy/memcpy_avx2_mid_asm.S` is registered as `avx2_mid_asm` but is excluded
-  from the width audit's asm pass, as the earlier `memcpy_asm.S` rung is.
+- `src/memcpy/memcpy_avx2_mid_asm.S` is registered as `avx2_mid_asm` and width-gated
+  like every other asm rung: declared 256, compiled 256 OK on all three targets.
 - Commits: P1 kernel `d56e78f`, P5 asm twin `3602042`, mid + dispatcher wiring
   `bae20e4`, width-gate fix for the dispatcher TU `92461dc`. Campaign matrices
   and this report are committed together.
