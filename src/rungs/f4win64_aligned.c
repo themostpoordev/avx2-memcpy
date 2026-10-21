@@ -194,6 +194,62 @@
  *   Only the branch target offsets differ, which is the point of the flag.
  *
  *   P2 PASS on all three targets.
+ *
+ * RESULT (measured 2026-10-21; the criteria above are UNCHANGED from commit
+ * 200a852, which was made BEFORE any measurement ran)
+ *
+ *   *** REJECTED IN PHASE 7.2 - S3: A2 FAILED. ***
+ *
+ *   The 128 B fix ITSELF WORKS, on all three targets, at both statistics:
+ *
+ *   A1  PASS x3. 128 B: +18.31% against F4, min AND median, identical on
+ *       znver2, znver3 and v3 (2.7969 ns against F4's 3.4238 ns). Against
+ *       glibc it is a WIN, not a loss: 2.7969 ns against glibc's 3.1000 ns,
+ *       +10.11%. For the first time in the project, 128 B is ahead of glibc
+ *       rather than behind it.
+ *
+ *   A2  FAIL on znver2 and znver3. 512 B regresses by -2.70% against F4
+ *       (-1.33% on v3, which passes). Every other gated size is clean:
+ *       16 B, 32 B, 64 B, 256 B and 1 MiB are all within the null band, and
+ *       the 32 B and 64 B regressions that sank the H1b attempt (-16.3% to
+ *       -16.9%) are GONE - the alignment fix did its job.
+ *
+ *   A3  PASS x3. The shipped F4 .text md5 is unchanged on every target
+ *       (0b2d0837e25a53b2570ef33a6606edfa on znver2 and znver3,
+ *       71c9cefef2d67698267abc118fe55e1a on v3).
+ *
+ *   WHY 512 B STILL FAILS, and it is NOT the alignment flag. The campaign
+ *   also carried the H1b control, which has the same knob and NO alignment
+ *   flag, measured in the same windows: H1b shows the IDENTICAL -2.70% at
+ *   512 B on znver2 and znver3. So the 512 B shift is caused by the KNOB -
+ *   by the code the knob adds to the window body moving the flat class chain,
+ *   which is where the 512 B path lives - and the alignment flag cannot fix
+ *   it. The raw numbers are two timer ticks of identical code: F4's 512 B
+ *   floor is 5.7891 ns and both knob builds' is 5.9453 ns, a 0.156 ns
+ *   difference, with the 512 B path's instructions byte-identical in all
+ *   three builds. The null band at 512 B computes as 0.00% because naive and
+ *   ref_scalar landed on the same timer value, so the band rule falls back to
+ *   the protocol's 1.5% floor, which two ticks exceeds.
+ *
+ *   CONSEQUENCE: this rung is REJECTED and is NOT promoted, per S3 - "If A2
+ *   fails on either attempt -> REJECT. Do not trade certified rows for
+ *   128 B." src/fast.c was never edited; the shipped kernel keeps its
+ *   128..256 B window and its certified 128 B loss stands. The 512 B row
+ *   would have shrunk from +16.83% to about +14.6% against glibc - still a
+ *   certified win, but smaller, and the gate exists precisely to refuse a
+ *   quiet trade of that kind.
+ *
+ *   The full record, with the pre-registered criteria, the per-size deltas
+ *   and the control evidence, is in docs/NEGATIVE_RESULTS.md. The campaign
+ *   logs are committed under docs/data/raw/ (phase7_f4al_<target>) and the
+ *   acceptance summary is docs/data/phase7_f4al_acceptance_summary.csv.
+ *
+ *   What is NOT settled: the 128 B win is real and reproducible, and the
+ *   only thing standing between it and the shipped kernel is a two-tick
+ *   placement shift at 512 B caused by the knob's own code growth. A
+ *   strategy that adds the n == 128 case WITHOUT moving the flat class
+ *   chain would likely pass. That would be a further attempt, under a new
+ *   pre-registration, and it is not attempted here.
  */
 #define TUNED_FN         memcpy_f4win64_aligned
 #define TUNED_UNROLL     4

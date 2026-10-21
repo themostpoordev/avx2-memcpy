@@ -127,6 +127,7 @@ def main():
     tag = sys.argv[1]
     cands = sys.argv[2:]
     overall = True
+    csv_rows = []
     for cand in cands:
         print('=' * 104)
         print('ACCEPTANCE TEST  candidate=%s  campaign=%s' % (cand, tag))
@@ -146,6 +147,16 @@ def main():
             km, pm = median(samp[(cand, A1_SIZE)]), median(samp[(PREV, A1_SIZE)])
             d_med = 100.0 * (pm - km) / pm
             a1 = d_min >= A1_FLOOR and d_med >= A1_FLOOR
+            csv_rows.append([target, cand, A1_SIZE, 'A1',
+                             '%.4f' % float(p['min_of_mins_ns']),
+                             '%.4f' % float(k['min_of_mins_ns']),
+                             '%.4f' % pm, '%.4f' % km,
+                             '%+.2f' % d_min, '%+.2f' % d_med,
+                             '%+.2f' % float(k['delta_vs_glibc_pct']),
+                             '%.2f' % float(k['null_band_pct']), k['tier'],
+                             '%.2f' % float(k['tier_floor_pct']),
+                             k['tier_verdict_vs_prev'],
+                             'PASS' if a1 else 'FAIL', ''])
             print('  A1  %d B vs F4   d_min %+7.2f%%   d_med %+7.2f%%'
                   '   (floor >= %.2f%%)   %s'
                   % (A1_SIZE, d_min, d_med, A1_FLOOR, 'PASS' if a1 else 'FAIL'))
@@ -174,6 +185,17 @@ def main():
                 bad = not (ok_band and ok_tier and ok_back)
                 if bad:
                     a2_fail.append(size)
+                csv_rows.append([target, cand, size, 'A2',
+                                 '%.4f' % float(cells[(PREV, size)]['min_of_mins_ns']),
+                                 '%.4f' % float(r['min_of_mins_ns']),
+                                 '%.4f' % median(samp[(PREV, size)]),
+                                 '%.4f' % median(samp[(cand, size)]),
+                                 '%+.2f' % d, '',
+                                 '%+.2f' % float(r['delta_vs_glibc_pct']),
+                                 '%.2f' % band, r['tier'],
+                                 '%.2f' % eff, tier_v,
+                                 'ok' if not bad else 'FAIL',
+                                 'REGRESSION' if bad else 'ok'])
                 print('      %9d B  d %+8.2f%%  band %6.2f%%  floor %6.2f%%  '
                       'tier %s %-9s  band:%s tier:%s backstop:%s  %s'
                       % (size, d, band, eff, r['tier'], tier_v,
@@ -207,6 +229,18 @@ def main():
     print('=' * 104)
     print('OVERALL: %s' % ('PASS' if overall else 'FAIL'))
     print('=' * 104)
+    out = os.path.join(ROOT, 'docs', 'data',
+                       'phase7_%s_acceptance_summary.csv' % tag)
+    hdr = ['target', 'candidate', 'size', 'criterion', 'f4_min', 'cand_min',
+           'f4_median', 'cand_median', 'delta_vs_f4_min_pct',
+           'delta_vs_f4_median_pct', 'delta_vs_glibc_pct', 'null_band_pct',
+           'tier', 'tier_floor_pct', 'verdict_vs_f4', 'criterion_verdict',
+           'a2_verdict']
+    with open(out, 'w', newline='') as f:
+        w = csv.writer(f, lineterminator='\n')
+        w.writerow(hdr)
+        w.writerows(csv_rows)
+    print('wrote %s (%d rows)' % (out, len(csv_rows)))
     return 0 if overall else 1
 
 

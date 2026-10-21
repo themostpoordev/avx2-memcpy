@@ -144,6 +144,110 @@ fixed in advance: keep the H = 64 semantics at n = 128 *and* restore the
 64-byte alignment of the 32..64 B branch target, then re-run this same gate.
 That was not attempted here.
 
+## The 128 B alignment fix (Phase 7.2) — REJECTED by the regression gate, S3
+
+Phase 7.1 confirmed the 128 B cause (+18.31% at 128 B when that size gets the
+64-byte block pair) and rejected the candidate because the 16–64 B path lost
+its 64-byte branch-target alignment. Phase 7.2 added that alignment back and
+re-ran the same gate. **The 128 B fix works. The candidate is still rejected**,
+on a different size, for a different reason — and the reason is measured, not
+argued.
+
+### The pre-registered criteria (verbatim, `src/rungs/f4win64_aligned.c`)
+
+> **P1.** ALIGNMENT PRECONDITION. For each target t in {znver2, znver3, v3} and
+> for the LINKED binary bench/bench_<t>: every direct branch target of
+> memcpy_f4win64_aligned reachable when n <= 64 has an absolute address A with
+> (A & 0x3f) == 0. Each of those addresses is the first instruction of a basic
+> block… If any target fails, REJECT WITHOUT MEASURING.
+>
+> **P2.** INSTRUCTION IDENTITY. The 16..64 B path… of memcpy_f4win64_aligned is
+> instruction-identical… to the same region of memcpy_avx2_f4win64… which is the
+> same source with the same knob and WITHOUT -falign-labels=64.
+>
+> **A1.** 128 B delta vs F4 >= -2% (both min and median).
+>
+> **A2.** For each of 16, 32, 64, 256, 512 B and 1 MiB, on every target: the
+> delta against F4 must satisfy |delta| <= max(1.5%, null_band_pct)… AND the
+> tier verdict against F4 must not be LOSS. No certified row may be worse than
+> -5% against F4, whatever the band.
+>
+> **A3.** The .text md5 of build/<t>/src/fast.o is unchanged per target.
+>
+> **S1.** If P1 fails after one alignment attempt -> REJECT, do not measure.
+> **S1b.** If P2 fails on any target -> REJECT without measuring.
+> **S2.** If A1 fails on attempt 1 -> one retry allowed with a different
+> alignment strategy. If attempt 2 fails -> REJECT.
+> **S3.** If A2 fails on either attempt -> REJECT. Do not trade certified rows
+> for 128 B.
+
+Committed as `200a852` **before** the campaign; the measurement was
+`docs/data/raw/phase7_f4al_<target>.windows.log` (9 windows × 5 reps,
+`taskset -c 2`, `iters 4000`, zero migrated reps), and the per-size summary is
+`docs/data/phase7_f4al_acceptance_summary.csv`.
+
+### The measured deltas (candidate vs the shipped F4, same windows)
+
+| size | znver2 | znver3 | v3 | band (znver2) | A2 |
+|---|--:|--:|--:|--:|:--|
+| 16 B | +0.00% | +0.00% | +0.00% | 0.00% | pass |
+| 32 B | +0.00% | +0.00% | −0.53% | 0.00% | pass |
+| 64 B | +0.00% | +0.47% | +0.00% | 0.00% | pass |
+| 256 B | +0.00% | +0.00% | +0.00% | 0.00% | pass |
+| **512 B** | **−2.70%** | **−2.70%** | −1.33% | 0.00% | **FAIL (znver2, znver3)** |
+| 1 MiB | −0.38% | +0.59% | +0.64% | 5.16% | pass |
+
+**A1 PASS on all three targets**: 128 B is **+18.31%** against F4, min *and*
+median, identical on znver2, znver3 and v3 (2.7969 ns against F4's 3.4238 ns).
+Against glibc it is a **WIN** — 2.7969 ns against glibc's 3.1000 ns, +10.11%.
+**For the first time in this project, 128 B is ahead of glibc rather than
+behind it.**
+
+**A3 PASS on all three targets**: the shipped F4 `.text` md5 is unchanged
+(`0b2d0837…` znver2/znver3, `71c9cefe…` v3; sha256
+`cc9d462ebe8452cdbe34838f17656e9d0eb3336abe3db0eaf6a009389d8cc2f4`).
+
+**A2 FAILED on znver2 and znver3, at 512 B, by 1.20 percentage points** — the
+measured −2.70% against a 1.50% floor (the null band there computes as 0.00%).
+
+### What the alignment fix actually fixed
+
+The regressions that sank the Phase 7.1 attempt are **gone**: 32 B and 64 B went
+from −16.3%…−16.9% to +0.00% / +0.47% / −0.53%. The alignment strategy did
+exactly what it was supposed to do, and P1 confirmed the precondition held on
+all three targets before a single measurement was taken.
+
+### Why 512 B still fails — and it is NOT the alignment flag
+
+The campaign also carried the **H1b control**: the same knob, *no* alignment
+flag, measured in the same windows. H1b shows the **identical −2.70%** at 512 B
+on znver2 and znver3. So the 512 B shift is caused by the **knob**, not by
+`-falign-labels=64` — by the code the knob adds to the window body moving the
+flat class chain, which is where the 512 B path lives. The alignment flag cannot
+fix it, because it was never the cause.
+
+The raw numbers are **two timer ticks of identical code**: F4's 512 B floor is
+5.7891 ns and both knob builds' is 5.9453 ns — a 0.156 ns difference — with the
+512 B path's instructions byte-identical in all three builds. The null band at
+512 B computes as 0.00% because `naive` and `ref_scalar` landed on the same
+timer value, so the band rule falls back to the protocol's 1.5% floor, which two
+ticks exceeds.
+
+### Consequence
+
+**Rejected, per S3.** `src/fast.c` was never edited. The shipped kernel keeps
+its 128–256 B window and its certified 128 B loss stands. The 512 B row would
+have shrunk from +16.83% to about +14.6% against glibc — still a certified win,
+but smaller — and the gate exists precisely to refuse a quiet trade of that
+kind. The headline is unchanged.
+
+**What is not settled.** The 128 B win is real and reproduced on all three
+targets at both statistics; the only thing between it and the shipped kernel is
+a two-tick placement shift at 512 B caused by the knob's own code growth. A
+strategy that adds the n == 128 case *without* moving the flat class chain
+would likely pass. That would be a further attempt under a new
+pre-registration, and it is not attempted here.
+
 ## Alignment sensitivity — quantified (Phase 7)
 
 A 32-byte shift in the branch-target alignment of the 32..64 B path — the

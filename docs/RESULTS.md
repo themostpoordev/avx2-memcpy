@@ -79,12 +79,15 @@ identical under the floor and under the median.
 128-byte block pair has its head and tail blocks coincident, so the kernel
 issues 8 loads and 8 stores for a 128 B copy where glibc issues 4 and 4 — this
 kernel's 128 B copy costs *more* than its own 256 B copy, on all three
-targets. A Phase 7 experiment confirmed the cause (giving that size the 64-byte
-pair is worth +18.31% there) and the fix was still **rejected**, because the
-resulting code layout cost 16% at 32 B and 64 B — the certified wins. The
-full record, with the acceptance test that was fixed before the measurement
-ran, is in [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md). The shipped kernel
-keeps its window unchanged, and this loss stands.
+targets. Two Phase 7 experiments confirmed the cause and were still
+**rejected**: giving that size the 64-byte pair is worth **+18.31%** there
+(2.7969 ns against glibc's 3.1000 ns — ahead of glibc, for the first time),
+but the first attempt cost 16% at 32 B and 64 B through a branch-target
+alignment shift, and the second attempt — with the alignment restored, and
+with 32 B and 64 B clean — cost 2.7% at 512 B, which is a certified row. The
+full record, with the acceptance tests that were fixed before each measurement
+ran, is in [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md). The shipped kernel keeps
+its window unchanged, and this loss stands.
 
 ## Measured, not claimed (Tier B — inside the 25% floor)
 
