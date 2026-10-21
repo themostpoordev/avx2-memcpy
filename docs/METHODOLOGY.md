@@ -86,9 +86,12 @@ must be a width-gated rung.
 
 * The **frozen CSVs** in [`docs/data/`](data/) are the record. They are the
   `min_of_mins` tables the analysis produced, committed byte-for-byte.
-* The raw window logs they were derived from stay on the machine that produced
-  them. A log nobody can re-derive is not evidence, and a repo full of last
-  night's output is not a record.
+* The raw window logs the **shipped kernel's** rows were derived from are
+  committed under [`docs/data/raw/`](data/raw/), and
+  `scripts/f128b_summary.py` regenerates the summary CSV from them. A log
+  nobody can re-derive is not evidence, and a repo full of last night's output
+  is not a record — which is why the reference campaign's logs ship, and the
+  phase-2 ladder's logs (whose record is the committed CSVs) do not.
 * A claim that is not in the CSVs and not in [RESULTS.md](RESULTS.md) does not
   exist. No number in the prose was typed in by hand from memory; every one is
   copied from an analysed log.
@@ -145,7 +148,39 @@ seven-rung reference ladder (`src/rungs/`), one documented-loss experiment
 (`experiments/hybrid/`) and the predecessor kernel as a non-default reference
 (`src/reference/`, `make reference`). The frozen CSVs in `docs/data/` record the full ladder
 that was run on the reference host, which included many more candidate kernels
-and tuning knobs. **They cannot be regenerated from the public tree alone** — the
-sources for most of those candidates, and the raw logs behind the CSVs, stayed on
-the machine that ran the campaign. The CSVs are the frozen record of what was
-measured, not a build product of this repository.
+and tuning knobs. The **shipped kernel's** rows are regenerable: the reference
+campaign's raw window logs are committed under `docs/data/raw/` and
+`scripts/f128b_summary.py` rebuilds the summary CSV from them. The **phase-2
+ladder** rows are not: the sources for most of those candidates, and the raw
+logs behind the phase-2 CSVs, stayed on the machine that ran the campaign, and
+the CSVs are the frozen record of what was measured, not a build product of this
+repository. See §11 for the rule that governs what may be published.
+
+## 11. Reproducibility gate
+
+**Rule 1 — No published performance row without a committed window log.** Every
+number in RESULTS.md must be reconstructable from a log under
+`docs/data/raw/`.
+
+**Rule 2 — Bimodal sizes (spread > 50%) report both min and median.** A row that
+is a win under one statistic and a loss under the other is labeled conditional,
+not certified.
+
+**Rule 3 — Retractions are permanent.** A row that does not reproduce keeps its
+retraction paragraph in RESULTS.md and NEGATIVE_RESULTS.md. Removing a
+retraction is not permitted.
+
+**Rule 4 — The reference campaign (f128b) is the only committed campaign for
+F4.** If a future campaign supersedes it, it is committed the same way
+(`docs/data/raw/`), and the RESULTS.md headline is rewritten against the new
+reference.
+
+*Scope of Rule 1.* It governs the shipped kernel's published performance rows.
+The phase-2 reference ladder in RESULTS.md ("The ladder") is context, not a
+claim about the shipped kernel; its record is the committed phase-2 CSVs in
+`docs/data/`, and it is `min_of_mins` only. Its raw logs did not ship.
+
+*Current state.* The reference campaign is committed and every shipped-kernel row
+reproduces from it. No row is currently conditional and none is retracted; both
+sections are kept in RESULTS.md so that the next one that is has somewhere to
+go.

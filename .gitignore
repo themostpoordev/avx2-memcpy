@@ -43,6 +43,8 @@ src/perf6/
 # (explicit negations: a record that is gitignored is not a record)
 !docs/data/
 !docs/data/*.csv
+!docs/data/raw/
+!docs/data/raw/*.windows.log
 !experiments/hybrid/data/
 !experiments/hybrid/data/*.csv
 

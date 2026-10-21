@@ -194,7 +194,17 @@ void *MID_FN(void *dst, const void *src, size_t n)
             _mm_prefetch((const char *)(s + j + MID_PF1), _MM_HINT_NTA);
             _mm_prefetch((const char *)(d + j + MID_PF1), _MM_HINT_T0);
 #if MID_PF2
-            _mm_prefetch((const char *)(s + j + MID_PF2), _MM_HINT_NTA);
+            /* The second source stream is MID_PF2 = 2*BLOCK ahead of the block
+             * start, so at the last iteration it points up to MID_BLOCK bytes
+             * past the end of the copy. A prefetch of an address outside the
+             * buffer is harmless on x86, but forming a pointer more than one
+             * past the end of the object is undefined behaviour in C, so the
+             * offset is clamped to the copy length. The clamp is a compare
+             * against a value already live in the loop condition, and the
+             * branch is perfectly predicted. */
+            size_t pf2 = j + MID_PF2;
+            if (pf2 < m)
+                _mm_prefetch((const char *)(s + pf2), _MM_HINT_NTA);
 #endif
             for (size_t k = 0; k < (size_t)MID_UNROLL; k++)
                 M_MOVE32(r + j + k * 32);
@@ -206,7 +216,10 @@ void *MID_FN(void *dst, const void *src, size_t n)
             _mm_prefetch((const char *)(s + j + MID_PF1), _MM_HINT_T0);
             _mm_prefetch((const char *)(d + j + MID_PF1), _MM_HINT_T0);
 #if MID_PF2
-            _mm_prefetch((const char *)(s + j + MID_PF2), _MM_HINT_T0);
+            /* Clamped for the same reason as the NTA branch above. */
+            size_t pf2 = j + MID_PF2;
+            if (pf2 < m)
+                _mm_prefetch((const char *)(s + pf2), _MM_HINT_T0);
 #endif
             for (size_t k = 0; k < (size_t)MID_UNROLL; k++)
                 M_MOVE32(r + j + k * 32);

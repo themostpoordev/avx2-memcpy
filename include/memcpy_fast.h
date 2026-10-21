@@ -18,6 +18,9 @@
 
 #include <stddef.h>
 
+/* Requires AVX2 for n > 64. For n <= 64 the small path uses
+   SSE2 only and runs on any x86-64. Calls with n > 64 on a
+   non-AVX2 CPU will SIGILL. */
 void *memcpy_fast(void *dst, const void *src, size_t n);
 
 #endif /* MEMCPY_FAST_H */

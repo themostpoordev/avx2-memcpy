@@ -82,6 +82,30 @@ result that the simpler shape did not already have, and `-funroll-loops` on its
 own cost up to 19%. Verdict: the shipped kernel is the simplest point in the
 grid that cleared the floors.
 
+## 1 MiB row — audited, not retracted
+
+Published: +8–13% vs glibc at 1 MiB at the floor, and level to 2.7% behind at the
+median. **Not retracted** — the number reproduces.
+
+A Phase 6 audit re-derived every published row from the reference campaign's raw
+window logs, now committed under `docs/data/raw/`, and found that all of them
+reproduce exactly, this one included. The audit that proposed a retraction was
+itself wrong: it had let glibc's `memset` samples into the `memcpy` baseline,
+which inflated glibc's floor at every size and made 1 MiB look like a 54% loss.
+The repo's own analyser (`scripts/analyze.sh`), which filters on the operation,
+reproduces +7.95 / +10.67 / +8.28% at 1 MiB exactly.
+
+So the row ends up more precise than a retraction would have been. The floor
+says +8 to +11%, the median says level to 2.7% behind, and both sit inside the
+Tier-B 25% floor — so 1 MiB is `measured`, not a claim, and the honest summary
+is that the kernel is level with glibc at that size.
+
+The mechanism is the reason for Rule 1 in
+[METHODOLOGY.md §11](METHODOLOGY.md#11-reproducibility-gate): a number that
+cannot be re-derived from a committed log cannot be defended, and the defence
+has to be mechanical. Committing the log is what turned "we think it
+reproduces" into "it reproduces, here is the command".
+
 ## What this list is for
 
 If you are about to try one of these, the measurement says where it ends. If you
