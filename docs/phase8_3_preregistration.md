@@ -160,3 +160,99 @@ plus `glibc`, `ref_scalar` and `naive`. P1, P2 and P3 are evaluated against
 1 MiB. 64 KiB and 256 KiB are not in the P1 gate, but they are the two rows the
 loop-shape change could touch, so they are measured and reported. **4 MiB is
 not measured** — it is out of scope.
+
+## Attempt 1 result — REJECTED (S2 and S3)
+
+Campaign: `docs/data/raw/phase7_p83_<target>.windows.log`, 9 windows x 5 reps,
+4455 REPS lines per target, **zero migrated reps**.
+
+| criterion | result | verdict |
+|---|---|---|
+| **P1** the certified rows unchanged within the null band | every cell inside its limit (the largest move is 16 KiB on v3 at −1.18%, inside its 1.50% limit) | **PASS** |
+| **P2** the 1 MiB floor preserved | +8.12 / +7.56 / +7.36% against the Phase 7.4 reference's +12.58 / +11.10 / +9.42% | **FAIL on all three** |
+| **P3** the 1 MiB median moved to ≥ +1.5% | −4.35 / −3.61 / −2.80% — 0 of 3 | **FAIL** |
+
+**The decomposition is the informative part.** At 1 MiB:
+
+| effect | floor | median |
+|---|--:|--:|
+| the loop shape (`pf_ctl` vs `fast`) | +0.79 / −0.38 / −1.69% | −0.11 / −0.04 / −0.48% |
+| the distance (`pf_big` vs `pf_ctl`) | −2.74 / −3.97 / −2.03% | −2.25 / −1.62 / −1.10% |
+
+The **loop shape is free** — the runtime-distance re-scheduling costs nothing
+measurable, which is exactly what the control was for. The **4096 B distance
+is actively harmful**: it costs 2–4% at the floor and 1–2% at the median, on
+all three targets. The construction's premise (that 128 B covers too little of
+the copy's latency) is wrong in practice: a 32× longer lookahead fetches lines
+that are evicted before they are used, and the bandwidth it wastes is charged
+to the copy.
+
+## Attempt 2 — pre-registration: prefetch COVERAGE in the 1 MiB band
+
+Attempt 1 tested the prefetch's **distance**. Attempt 2 tests its
+**coverage**, which is a different change and is aimed at the cause attempt 1
+identified.
+
+**The mechanism, from the attempt-1 campaign.** At 1 MiB the copy moves 2 MiB
+of traffic. Two rates appear in the data, and they are not a host effect:
+
+* **32 B/cycle** (2 MiB in ~23 000 ns = 91 GB/s) — the loop's **store-port
+  ceiling** on this core. This is the fast mode.
+* **27 B/cycle** (2 MiB in ~27 700 ns = 76 GB/s) — the **memory-hierarchy**
+  rate, and what the median shows for every kernel, ours and glibc's alike.
+
+The gap between them is the loads not being covered in time. The shipped
+kernel's software prefetch covers **one** 64 B line of the next 128 B
+iteration (a T0 prefetch at +128 brings in the line containing it); the other
+line is left to the hardware prefetcher. When the software prefetch arrives in
+time the copy runs at the store ceiling; when it does not, the copy is
+bandwidth-bound at 76 GB/s. The fast mode is the first case, and it is a
+**per-(kernel, rep) lottery**: in the attempt-1 campaign `fast`, `pf_ctl`,
+`pf_big` and `f4_baseline` each won it in 3–7 of their 45 reps, at
+**different** reps, while `glibc` never won it in any of its 135.
+
+**The construction.** In the 1 MiB band only, issue a **second prefetch pair**
+at **+192**, so both 64 B lines of the next iteration are covered by software
+instead of one. Everything else is the shipped kernel: the first pair stays at
++128, the band stays 512 KiB ≤ n < 2 MiB, the distance knob keeps the shipped
+128 B value (attempt 1's 4096 B is *not* carried over — it was harmful).
+
+**The control.** The second prefetch's address is a runtime value, so the band
+loop is re-scheduled. `src/rungs/pf_ctl2.c` is the control: the same shape with
+the second pair at **+128**, i.e. a duplicate of the first pair — the same
+instruction count, no extra coverage — so the shape is priced separately. It
+is built and measured **before any promote**, and only if P3 passes.
+
+**Criteria — unchanged from the pre-registration above.**
+
+* **P1** every certified row (8/16/32/64/128/256/512 B, 16 KiB) unchanged
+  within the null band versus the Phase 7.4 deliverable, same windows. The
+  band starts at 512 KiB and the prefetch is off below 64 KiB, so **no
+  certified row can be affected at all** — this is a structural precondition,
+  not a hope.
+* **P2** the 1 MiB floor preserved: not worse than the Phase 7.4 reference
+  (+12.58 / +11.10 / +9.42%) on any target.
+* **P3** the 1 MiB median moved to ≥ +1.5% (the Tier A floor, or the null band
+  where larger) against glibc on ≥ 2 of 3 targets.
+
+**Stop conditions — unchanged.** S1 → REJECT if P1 fails. S2 → REJECT if P2
+fails; the win at the floor is the asset. S3 → **this is the last attempt**: if
+P3 fails, **accept parity at 1 MiB**, document it in NEGATIVE_RESULTS.md, and
+close Phase 8. There is no attempt 3.
+
+**Why this is the last attempt, stated before measuring.** Every other
+mechanism on Phase 8.1 Q3's list is closed by evidence:
+
+* the software prefetch's distance — the alignment-unroll grid, and attempt 1;
+* the aligned main loop and the unroll (4/6/8/12) — the alignment-unroll grid:
+  "only unroll 4 with the aligned loop and a gated +128 B prefetch survived";
+* `PREFETCHW` on the destination — "no size at which it wins";
+* NT stores — the ladder rung already writes **full 64 B lines** (four
+  `_mm256_stream_si256` per 128 B iteration), so its 17–22 GB/s is not a
+  granularity artifact, and the sweep found "no size at which NT wins on any
+  target" (a 69–372% loss);
+* L2/L3 residency and page-boundary crossing — not kernel-actionable: the
+  working set's residency is host state, and the buffers are already
+  `MADV_HUGEPAGE`d.
+
+So attempt 2 is the last lever, and it is aimed at the identified cause.
