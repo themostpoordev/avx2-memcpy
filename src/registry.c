@@ -62,6 +62,15 @@ const impl_t g_impls[] = {
       "Phase 8.3 CONTROL: the same runtime-distance loop shape as pf_big, "
       "with the distance left at 128 B - prices the loop shape alone" },
 
+    { "pf_cov2", memcpy_pf_cov2, NULL,
+      "Phase 8.3 attempt 2: the shipped kernel with a second prefetch pair at "
+      "+192 for 512 KiB <= n < 2 MiB, so both lines of the next iteration are "
+      "covered in software" },
+
+    { "pf_ctl2", memcpy_pf_ctl2, NULL,
+      "Phase 8.3 attempt 2 CONTROL: the same shape, with the second pair a "
+      "duplicate of the first - prices the loop shape alone" },
+
     { "mid", memcpy_mid, NULL,
       "opt-in 1 KiB-64 KiB kernel: 256 B/iteration, three prefetch streams, head "
       "peel gated at 4 KiB. Certifies +6-7% at 16 KiB; NOT part of the fast path" },

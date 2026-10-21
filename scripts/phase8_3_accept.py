@@ -33,8 +33,11 @@ SPREAD_MAX = 10.0
 P2_REF = {'znver2': 12.58, 'znver3': 11.10, 'v3': 9.42}
 P1_SIZES = [8, 16, 32, 64, 128, 256, 512, 16384]
 SHIPPED = 'fast'
-CAND = 'pf_big'
-CTL = 'pf_ctl'
+# the candidate and its control, overridable on the command line:
+#   attempt 1 -> pf_big / pf_ctl      (prefetch DISTANCE)
+#   attempt 2 -> pf_cov2 / pf_ctl2    (prefetch COVERAGE)
+CAND = os.environ.get('P83_CAND', 'pf_cov2')
+CTL = os.environ.get('P83_CTL', 'pf_ctl2')
 
 
 def pct(v, q):

@@ -69,7 +69,7 @@ SRCS      := $(wildcard src/*.c) $(wildcard src/rungs/*.c) $(wildcard bench/*.c)
 ASM_SRCS  := $(wildcard src/rungs/*.S)
 SRC_OBJ   := $(patsubst %.c,%.o,$(SRCS)) $(patsubst %.S,%.o,$(ASM_SRCS))
 
-GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c src/rungs/f4_baseline.c src/rungs/pf_big.c src/rungs/pf_ctl.c
+GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c src/rungs/f4_baseline.c src/rungs/pf_big.c src/rungs/pf_ctl.c src/rungs/pf_cov2.c src/rungs/pf_ctl2.c
 
 # The library half of the build, without the harness's main(). route_check links
 # this, because it has its own main() and never touches a clock.
@@ -106,6 +106,10 @@ GCC_EXTRA_pf_big.c := -fno-crossjumping -falign-labels=64
 # Phase 8.3 CONTROL: the same flags as the deliverable and as pf_big, so the
 # two differ from the shipped kernel ONLY in the prefetch distance.
 GCC_EXTRA_pf_ctl.c := -fno-crossjumping -falign-labels=64
+
+# Phase 8.3 attempt 2 and its control: the same flags as the deliverable.
+GCC_EXTRA_pf_cov2.c := -fno-crossjumping -falign-labels=64
+GCC_EXTRA_pf_ctl2.c := -fno-crossjumping -falign-labels=64
 
 BINS := $(addprefix bench/bench_,$(TARGETS))
 EXP_T := znver2

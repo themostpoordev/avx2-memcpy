@@ -100,6 +100,18 @@
 #define TUNED_PF_BIG_MAX 0
 #endif
 
+/* Optional (Phase 8.3 attempt 2): a SECOND prefetch pair, inside the same
+ * band, at its own distance. 0 = off.
+ *
+ * The first software prefetch covers one 64 B line of the next 128 B
+ * iteration; this one covers the other, so both lines of the next iteration
+ * are in software's hands instead of one.  It is a COVERAGE change, not a
+ * distance change - attempt 1 moved the distance and it cost 2-4%.
+ */
+#ifndef TUNED_PF_BIG2_BYTES
+#define TUNED_PF_BIG2_BYTES 0
+#endif
+
 /* Optional (V9b): take the n <= 64 classes from a SINGLE compare, before the
  * flat-class chain, and copy them with kernel 4's shape.
  *
@@ -329,10 +341,15 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
 #endif
 
 #if TUNED_PF_BIG_BYTES
-    /* Phase 8.3: a longer distance for one size band. Chosen once, before the
-     * loop, so the loop body is untouched. */
-    if (n >= (size_t)TUNED_PF_BIG_MIN && n < (size_t)TUNED_PF_BIG_MAX)
+    /* Phase 8.3: a different prefetch behaviour for one size band. Chosen
+     * once, before the loop. */
+    size_t pf2 = 0;
+    if (n >= (size_t)TUNED_PF_BIG_MIN && n < (size_t)TUNED_PF_BIG_MAX) {
         pf = (size_t)TUNED_PF_BIG_BYTES;
+#if TUNED_PF_BIG2_BYTES
+        pf2 = (size_t)TUNED_PF_BIG2_BYTES;
+#endif
+    }
 #endif
 
 #if TUNED_ALIGNED
@@ -345,6 +362,15 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
             if (pf && n >= (size_t)TUNED_PF_MIN) {
                 _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
                 _mm_prefetch((const char *)(d + i + pf), _MM_HINT_T0);
+#if TUNED_PF_BIG_BYTES
+                /* Phase 8.3 attempt 2: the second line of the next iteration.
+                 * pf2 is loop-invariant, so the compiler unswitches on it and
+                 * the path OUTSIDE the band keeps the shipped loop. */
+                if (pf2) {
+                    _mm_prefetch((const char *)(s + i + pf2), _MM_HINT_T0);
+                    _mm_prefetch((const char *)(d + i + pf2), _MM_HINT_T0);
+                }
+#endif
             }
             for (size_t k = 0; k < (size_t)TUNED_UNROLL; k++) {
                 __m256i v = _mm256_load_si256((const __m256i *)(s + i + k * 32));
@@ -358,6 +384,15 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
             if (pf && n >= (size_t)TUNED_PF_MIN) {
                 _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
                 _mm_prefetch((const char *)(d + i + pf), _MM_HINT_T0);
+#if TUNED_PF_BIG_BYTES
+                /* Phase 8.3 attempt 2: the second line of the next iteration.
+                 * pf2 is loop-invariant, so the compiler unswitches on it and
+                 * the path OUTSIDE the band keeps the shipped loop. */
+                if (pf2) {
+                    _mm_prefetch((const char *)(s + i + pf2), _MM_HINT_T0);
+                    _mm_prefetch((const char *)(d + i + pf2), _MM_HINT_T0);
+                }
+#endif
             }
             for (size_t k = 0; k < (size_t)TUNED_UNROLL; k++) {
                 __m256i v = _mm256_loadu_si256((const __m256i *)(s + i + k * 32));

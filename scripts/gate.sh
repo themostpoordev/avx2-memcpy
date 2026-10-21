@@ -75,6 +75,8 @@ declared_bits() {
         pf_big.c)                                        echo 256 ;;
         # Phase 8.3 control: the same shape as pf_big
         pf_ctl.c)                                        echo 256 ;;
+        # Phase 8.3 attempt 2 and its control
+        pf_cov2.c|pf_ctl2.c)                              echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                   echo 256 ;;
         # hand-written asm rungs: 32 B moves
         asm.S|memset_asm.S)                               echo 256 ;;

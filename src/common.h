@@ -55,6 +55,8 @@ void *memcpy_f4win64_aligned(void *dst, const void *src, size_t n); /* Phase 7.2
 void *memcpy_f4_baseline(void *dst, const void *src, size_t n);    /* Phase 7.4 control: the pre-promote F4 */
 void *memcpy_pf_big(void *dst, const void *src, size_t n);        /* Phase 8.3 attempt 1: 4 KiB prefetch distance in the 512 KiB-2 MiB band */
 void *memcpy_pf_ctl(void *dst, const void *src, size_t n);        /* Phase 8.3 CONTROL: the runtime-distance loop shape, distance left at 128 B */
+void *memcpy_pf_cov2(void *dst, const void *src, size_t n);       /* Phase 8.3 attempt 2: a second prefetch pair at +192 in the 512 KiB-2 MiB band */
+void *memcpy_pf_ctl2(void *dst, const void *src, size_t n);       /* Phase 8.3 attempt 2 CONTROL: the same shape, the second pair a duplicate */
 
 /* ---- the matching memset ladder ------------------------------------------ */
 void *memset_naive(void *dst, int c, size_t n);
