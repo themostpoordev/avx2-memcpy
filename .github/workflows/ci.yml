@@ -1,0 +1,66 @@
+# Verify the published claims, not the performance.
+#
+# Two things are checked on every push, and both are the kind of check that
+# fails loudly rather than silently:
+#
+#   1. make gate          - the source audit and the width gate. Both are
+#                           static: they read the sources and the built
+#                           objects, and they do not execute the kernels, so
+#                           they do not depend on which CPU the runner has.
+#   2. check_published.py - re-derives every published delta in
+#                           docs/RESULTS.md from the committed CSVs and
+#                           compares it. A number that drifts out of the
+#                           committed record fails the build.
+#
+# The performance numbers themselves are NOT re-measured here: they need the
+# reference host, a quiet window, and 9 windows x 5 reps per target. What
+# ships instead is the raw window log for every published row, so the claims
+# can be re-derived on that host at any time.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: gate and published-claims check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build all three targets
+        run: make clean && make -j"$(nproc)"
+
+      - name: make gate (source audit + width gate)
+        run: make gate
+
+      - name: every published delta still matches the committed CSV
+        run: python3 scripts/check_published.py
+
+  verify:
+    name: byte-for-byte verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build
+        run: make clean && make -j"$(nproc)"
+
+      # The v3 target is built for generic x86-64-v3, so it runs on any AVX2
+      # host. This is the required check.
+      - name: verify the shipped kernel against the glibc reference (v3)
+        run: ./bench/bench_v3 --impl fast --verify
+
+      # The znver2 and znver3 binaries are built for a different
+      # microarchitecture; they are expected to run on a current x86-64 runner,
+      # but a runner that lacks an instruction they use must not turn into a
+      # red build. These are reported, not required.
+      - name: verify the shipped kernel on the znver2/znver3 builds (informational)
+        continue-on-error: true
+        run: |
+          ./bench/bench_znver2 --impl fast --verify
+          ./bench/bench_znver3 --impl fast --verify

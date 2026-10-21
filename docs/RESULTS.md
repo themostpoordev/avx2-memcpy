@@ -266,6 +266,16 @@ window's contribution, stated as a trade rather than a free win.
 
 ## How the numbers were produced
 
+**What the measurement is.** Each size is measured on its own, in a tight loop,
+on buffers that are allocated once and touched once (so the source and
+destination are warm and page-fault free), single threaded, with the branch
+predictor trained on that one size. That is the best case for a
+size-specialised kernel and the worst case for a general-purpose one: a
+workload that mixes sizes pays a branch mispredict and a cache miss per call.
+Nothing here measures a mixed-size workload, and the margin at 8–64 B is
+exactly where that would bite first. The numbers below are floors on a
+single-size, warm-cache workload, and they are labelled as such.
+
 `min_of_mins` (the smallest single-batch time over every rep in every window),
 9 windows x 5 reps with no early stop, `taskset -c 2`, `migrated=0` required, and
 a per-cell floor of `max(1.5%, measured null band)`. Every row additionally
@@ -313,8 +323,11 @@ by a median.
   `scripts/phase8_2_summary.py` regenerate the summary CSVs from them and
   `scripts/phase7_4_tables.py` regenerates the tables in this file. The
   phase-2 ladder rows below are the older campaign, whose record is the
-  committed phase-2 CSVs in `docs/data/`; the raw logs behind those CSVs did
-  not ship and are not reconstructable here. The candidate kernels that lost
+  committed phase-2 CSVs in `docs/data/`; the raw window logs behind six of
+  the seven rungs are committed too, under `docs/data/raw/ladder/`, so those
+  rows are reconstructable as well. The three remaining CSVs
+  (`phase2_avx2_pf2`, `phase2_avx2_pf4`, `phase2_sse2_longwin`) are
+  record-only: they are not published in any table here. The candidate kernels that lost
   (V9b, V9c variants, the prefetch-window grid, the PGO/LTO probes) stayed on
   the VPS, by design — a record that only lists winners is a sales sheet, and
   [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) is the record of what lost.
