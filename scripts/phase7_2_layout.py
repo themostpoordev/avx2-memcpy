@@ -25,7 +25,10 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGETS = ['znver2', 'znver3', 'v3']
-ALIGNED = 'memcpy_f4win64_aligned'
+# The symbol under test. Default: the rung. Override with argv[1] to check the
+# promoted deliverable (memcpy_fast) instead - the check must be run on the
+# artefact that ships, not on the rung it came from.
+ALIGNED = os.environ.get('P2_LAYOUT_SYMBOL', 'memcpy_f4win64_aligned')
 CONTROL = 'memcpy_avx2_f4win64'     # same knob, no -falign-labels
 SHIPPED = 'memcpy_fast'
 

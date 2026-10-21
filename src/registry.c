@@ -36,8 +36,18 @@ const impl_t g_impls[] = {
     /* ---- the two shipped kernels (public API: include/) ------------------ */
     { "fast", memcpy_fast, NULL,
       "deliverable (F4): one-compare tiny path, 128-256 B straight-line window, "
-      "32 B AVX2 loop above 512 B, gcc -O3 -fno-crossjumping, +128 B prefetch "
-      "at 64 KiB and up" },
+      "32 B AVX2 loop above 512 B, gcc -O3 -fno-crossjumping -falign-labels=64, "
+      "+128 B prefetch at 64 KiB and up" },
+
+    /* The pre-promote F4, kept as the control for the Phase 7.4 comparison.
+     * It is registered IMMEDIATELY AFTER "fast" on purpose: the harness runs
+     * rep-major across all cases, so two kernels that sit next to each other
+     * in this table are the two least positionally biased against each
+     * other, and the Phase 7.4 acceptance criteria are all relative to it. */
+    { "f4_baseline", memcpy_f4_baseline, NULL,
+      "Phase 7.4 CONTROL: the pre-promote F4, verbatim but for the symbol, so "
+      "the promoted kernel and the kernel it replaces can be measured in the "
+      "same windows" },
 
     { "mid", memcpy_mid, NULL,
       "opt-in 1 KiB-64 KiB kernel: 256 B/iteration, three prefetch streams, head "

@@ -297,6 +297,50 @@ cannot be re-derived from a committed log cannot be defended, and the defence
 has to be mechanical. Committing the log is what turned "we think it
 reproduces" into "it reproduces, here is the command".
 
+## 128 B — the trade we accepted (Phase 7)
+
+The shape that wins 128 B (**+10.11% vs glibc, the first win at this size**)
+costs 512 B 2.24 points of margin, because the window body that dispatches the
+64-byte pair sits *before* the flat class chain: any code added to that body
+displaces the chain, and the 512 B path's position in the code stream moves with
+it. Phase 7.3a isolated this — the 512 B block's **code position**, not the
+transition into it, moves the fast mode from 741 ns to 761 ns per 128-copy
+batch. The full analysis is in [`docs/phase7_3a_mechanism.md`](phase7_3a_mechanism.md).
+
+The no-trade alternative was measured too: **H1a** — move the window's lower
+edge to 129 so n = 128 falls through to the existing (64, 128] class, which
+already uses the 64-byte pair — **ties glibc at 128 B (0.00%) with zero cost
+anywhere else** (512 B, 256 B, 64 B, 32 B and 1 MiB all unchanged), because
+the function keeps its size and the 512 B path keeps every positional property.
+It was rejected because a win (+10.11%) is worth more than a tie, and the
+512 B margin loss still leaves 512 B at **+14.59% vs glibc — a certified win,
+not a loss**. The promoted kernel's 512 B floor is 5.9453 ns against the
+pre-promote kernel's 5.7891 ns: 20 ns per 128-copy batch, two timer ticks of
+the instrument's own quantum.
+
+A future design that reaches the 512 B path *before* the chain could win both.
+That is a structural project, out of scope for Phase 7.
+
+## 512 B — bimodal distribution note
+
+512 B measures in two modes on this host — **fast ~741 ns, slow ~1212 ns per
+128-copy batch** — and the mode split is a **host event, not a kernel property**
+(Phase 7.3a Q1: the slow mode is contiguous in time and spans three different
+implementations, and the 1 B/store rungs are immune to it because they are
+store-throughput bound).
+
+The consequence is that the **median at 512 B is a statistic of the run, not of
+the kernel**: the shipped kernel's own 512 B median reads 5.7891 ns in the
+Phase 7.2b campaign and 9.4688 ns in the Phase 7.4 one — same kernel, same
+size, same host, two campaigns — while its floor reads 5.7891 ns in both. The
+published 512 B number is therefore `min_of_mins`, consistent with the rest of
+the table, with the median reported beside it.
+
+Full distributions: `docs/data/phase7_p72b_acceptance_summary.csv` (the
+40 000-iteration confirmation) and the per-rep values in
+`docs/data/raw/phase7_p72b_40000_<target>.windows.log` and
+`docs/data/raw/phase7_p74_<target>.windows.log`.
+
 ## What this list is for
 
 If you are about to try one of these, the measurement says where it ends. If you

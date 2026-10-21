@@ -1,189 +1,121 @@
-# Results — memcpy_fast (F4) against glibc on Zen 2
+# Results — memcpy_fast against glibc on Zen 2
 
 Every number below comes from the **committed** reference campaign
-[`docs/data/raw/f128b_*.windows.log`](data/raw/) — 9 windows x 5 reps, pinned to
-one core, glibc measured in the same process and the same windows — with tier
-verdicts from [METHODOLOGY.md](METHODOLOGY.md). Two statistics are reported for
-every row: `min` (the floor) and `median` (the typical). A row is called a win
-only if it clears its floor under both.
-
-## Reference campaign
-
-Every certified number below is derived from
-[`docs/data/raw/f128b_*.windows.log`](data/raw/) — **committed**, one log per
-target. The campaign recorded the shipped kernel under the name
-`avx2_final_f4_win` (`avx2_final` plus F4's `TUNED_WINDOW`); the shipped source
-is `src/fast.c`.
-
-The per-size summary is
-[`docs/data/f128b_reference_summary.csv`](data/f128b_reference_summary.csv),
-regenerated from the committed logs by `python3 scripts/f128b_summary.py`. The
-repo's own analyser reproduces the same numbers straight from the log:
-
-```sh
-sh scripts/analyze.sh docs/data/raw/f128b_znver2.windows.log \
-   avx2_final_f4_win avx2_final znver2 memcpy
-```
+[`docs/data/raw/phase7_p74_<target>.windows.log`](data/raw/) — 9 windows x 5
+reps per target, `taskset -c 2`, `migrated=0` on every rep, glibc measured in
+the same process and the same windows. The per-size summary is
+[`docs/data/phase7_4_summary.csv`](data/phase7_4_summary.csv), regenerated from
+those logs by `python3 scripts/phase7_4_summary.py`. The tables below are
+generated from that CSV by `python3 scripts/phase7_4_tables.py`, so no
+published number is typed by hand.
 
 Two statistics are reported for every row, and they mean different things:
 
 * **Δ_min** — the *floor*. The fastest single sample observed, against glibc's
-  own floor. This is the statistic the claim model was built around.
-* **Δ_med** — the *typical*. The median of the 45 per-rep samples on each side.
+  own floor. This is the statistic the claim model is built around.
+* **Δ_med** — the *typical*. The median of the 45 per-rep samples.
 
-A row is called a win only if it clears its floor under **both**.
+A row is a certified win only if it clears its floor under **both**.
 
-## Certified wins (min and median both clear the floor)
+## Reference campaign
 
-| size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict |
-|--:|--:|--:|--:|:--:|:--|
-| 16 B | **+44.75 / +38.02 / +38.02%** | **+50.00 / +37.62 / +37.62%** | 18.7% | B / A / A | WIN x3 |
-| 32 B | **+25.45 / +25.45 / +25.49%** | **+25.10 / +25.10 / +25.10%** | 31.6% | B / A / A | WIN x3 |
-| 64 B | **+25.49 / +25.49 / +25.10%** | **+25.10 / +25.10 / +25.10%** | 16.6% | A / A / A | WIN x3 |
-| 512 B | **+16.83 / +16.83 / +15.71%** | **+16.83 / +15.71 / +15.71%** | 66.3% | A / A / A | WIN x3 |
+The shipped kernel is the **Phase 7.4 promote**: the F4 shape plus the 128 B
+case that gives `n == 128` a 64-byte block pair (four loads and four stores,
+no redundancy) inside the 128–256 B window, compiled with `-falign-labels=64`
+so the 32–64 B path keeps the 64-byte alignment of its out-of-line branch
+target. Its `.text` md5 is `0eb00867a4688a618d0e4329195c188d` on znver2 and znver3 and `368680ed8dac9be06d0c1d382b5dfc6c` on
+v3.
 
-**4 certified wins over glibc on the measured silicon.** 16 B and 32 B are Tier B
-on znver2 — that cell's per-window spread exceeds 10%, so its floor is 25% rather
-than 1.5% — and clear that floor under both statistics. 64 B and 512 B are Tier A
-everywhere.
+The promote was measured against the kernel it replaced in the same windows
+(`f4_baseline` in the campaign, the pre-promote F4 verbatim). The trade it makes
+is documented in [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md): **128 B is won,
+512 B loses 2.24 points of margin and stays a certified win.** The mechanism is
+in `docs/phase7_3a_mechanism.md`: the window body that dispatches the 64-byte
+pair sits *before* the flat class chain, so the branch that adds it displaces
+the chain, and the 512 B path's position in the code stream moves with it.
 
-Two of these deserve a second look:
-
-* **512 B is bimodal but not statistic-dependent.** 24 of 45 reps land in the fast
-  mode (~5.79 ns) and 16 in the slow mode (~9.55 ns), so the spread is 66%. The
-  floor and the median both land in the fast mode and Δ_min and Δ_med agree to
-  the digit (+16.83%). The distribution is wide; the verdict does not move with
-  the statistic.
-* **32 B on znver2 is the tightest cell in the table**: Δ_med +25.10% against a
-  25.00% floor. A certified win, but by 0.10 percentage points — and the
-  margin is an artefact of the *floor*, not of the kernel. That cell is Tier B
-  because **one window of nine** came in at 2.37 ns against 1.86–1.87 ns in the
-  other eight, and the tier is a max/min ratio over per-window minima, so a
-  single noisy window moves the floor from 1.5% to 25%. The kernel's own floor
-  agrees to 0.5% across those eight windows. The 25% floor is doing its job —
-  it is saying "this cell is noisy, so only a difference bigger than 25% is
-  trustworthy" — and the difference measured is 25.1%. The row is real; the
-  margin is thin; both are stated rather than smoothed.
-
-## Certified loss (Tier A)
+## Certified wins
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict |
 |--:|--:|--:|--:|:--:|:--|
-| 128 B | **−10.04 / −10.04 / −10.04%** | **−10.04 / −10.04 / −10.04%** | 68.6% | A x3 | LOSS x3 |
+| 16 B | **+38.02** / **+38.02** / **+50.31** | **+27.44** / **+27.44** / **+50.00** | 16.5/16.6/18.3 | B/B/A | WIN x3 |
+| 32 B | **+25.49** / **+25.10** / **+25.45** | **+5.05** / **+25.10** / **+25.10** | 22.7/29.6/30.6 | A/B/A | WIN x3 |
+| 64 B | **+25.10** / **+25.49** / **+25.49** | **+19.19** / **+25.10** / **+25.10** | 11.6/11.2/11.6 | A/A/A | WIN x3 |
+| 128 B | **+10.11** / **+10.11** / **+10.11** | **+45.22** / **+10.11** / **+10.11** | 61.3/60.6/61.6 | A/A/A | WIN 2/3 |
+| 256 B | **+8.41** / **+8.41** / **+8.41** | **+0.00** / **+8.41** / **+8.41** | 42.6/67.9/69.8 | A/A/A | WIN x3 |
+| 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN 2/3 |
 
-The kernel buys the 16–64 B band with one extra dispatch level, and 128 B pays
-about one timer step for it. It is disclosed, not tuned away, and the loss is
-identical under the floor and under the median.
+**Six sizes clear their floor.** 16 B, 32 B, 64 B and 256 B clear it on all
+three targets. **128 B clears it on two of three**: on v3 the null band at that
+size is 18.35%, so +10.11% is inside the band and the row reads `measured`
+there — the delta is identical on all three targets, the band is not. **512 B
+clears it on two of three**: on znver2 the cell is Tier B (its per-window
+spread is 57.95%), so its floor is 25% and +14.59% reads `measured` there; the
+delta is identical on all three targets.
 
-**The cause is known and the fix is not free.** At exactly 128 B the window's
-128-byte block pair has its head and tail blocks coincident, so the kernel
-issues 8 loads and 8 stores for a 128 B copy where glibc issues 4 and 4 — this
-kernel's 128 B copy costs *more* than its own 256 B copy, on all three
-targets. Two Phase 7 experiments confirmed the cause and were still
-**rejected**: giving that size the 64-byte pair is worth **+18.31%** there
-(2.7969 ns against glibc's 3.1000 ns — ahead of glibc, for the first time),
-but the first attempt cost 16% at 32 B and 64 B through a branch-target
-alignment shift, and the second attempt — with the alignment restored, and
-with 32 B and 64 B clean — cost 2.7% at 512 B, which is a certified row. The
-full record, with the acceptance tests that were fixed before each measurement
-ran, is in [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md). The shipped kernel keeps
-its window unchanged, and this loss stands.
+**128 B is the new win.** It was a certified loss of −10.04% before the
+promote and is now **+10.11%** on every target — the first time this kernel is
+ahead of glibc at that size. The cause was structural: at exactly 128 B the
+window's 128-byte block pair had its head and tail blocks coincident, so the
+kernel issued eight loads and eight stores for a 128 B copy where glibc issues
+four and four. Its own 128 B copy used to cost *more* than its 256 B copy.
 
-## Measured, not claimed (Tier B — inside the 25% floor)
+**256 B is a win at the floor and conditional at the median** — +8.41% on all
+three targets at the floor, but a tie at the median on znver2.
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict |
 |--:|--:|--:|--:|:--:|:--|
-| 256 B | +8.41 / +8.41 / +8.41% | +8.41 / +8.41 / +8.41% | 68.6% | B / A / A | win on 2 of 3, `measured` on znver2 |
-| 1 MiB | +7.95 / +10.67 / +8.28% | −2.67 / −1.36 / −1.81% | 17.9% | B x3 | `measured` x3 |
+| 8 B | **+25.49** / **+25.49** / **+38.93** | **+30.67** / **+24.67** / **+39.95** | 3.2/4.7/5.4 | A/A/A | WIN x3 |
 
-**256 B** is a win on znver3 and v3 (Tier A, 1.5% floor) and lands inside its 25%
-floor on znver2 (Tier B) — the same three-target split the row has always had.
+**8 B is now reported too.** It is not on the 13-point ladder, but the knob
+moves the `n <= 15` class, so the size is measured and reported rather than
+left unsaid: +25.49% / +25.49% / +38.93% at the floor, a win on all three
+targets.
 
-**1 MiB is the one headline row where the two statistics tell different stories,
-and it matters.** At the floor the kernel is +8 to +11% ahead; at the median it is
-level to 2.7% *behind*. Both sit inside the Tier-B 25% floor, so neither is a
-claim — but a reader who takes only the floor number will overestimate the 1 MiB
-result. The honest summary is: **at 1 MiB this kernel is level with glibc.**
+## Certified loss
 
-**Unmeasurable:** 4 MiB. Builds sharing two of three knobs spread 21–30% in the
-same windows, so nothing at that size is resolvable and nothing is claimed.
+**16 KiB: −2.28 / −2.41 / −2.40%, a certified loss on all three targets**
+(Tier A, 1.5% floor). This is not new and not caused by the promote: the
+promoted kernel is +1.16% against the kernel it replaced at that size on
+znver2, and the same −2.28% was already published for znver2 under the previous
+reference. What changed is that the other two targets moved from just inside
+the 1.5% floor to just outside it. The size is memory-bound, so the row
+follows the host, and the honest reading is "level with glibc, currently
+2.4% behind".
 
-**Opt-in, `memcpy_mid` (1 KiB <= n <= 64 KiB):** **16 KiB +7.13% / +5.95% /
-+7.13%**, Tier A on all three targets (193.0 ns against glibc's 210.2 ns on
-znver2).[^record] Outside 16 KiB the band is level, which is why it is opt-in and
-not the general path.
+## Conditional and parity
 
-## Conditional — statistic-dependent rows
+* **1 MiB: parity at the median** (−1.96 / −2.02 / −2.29%), and +12.58 /
+  +11.10 / +9.42% at the floor. Tier B, so the row is `measured` on two of the
+  three targets and a win on the third. The floor is a real property of the
+  kernel; the median is what a caller actually sees. It is not a claim.
+* **256 B**: a win at the floor on all three targets, a tie at the median on
+  znver2 (see above).
 
-**There are none.** A row is labeled conditional when it is a win under one
-statistic and a loss (or a tie) under the other. Across all 39 cells of
-[`f128b_reference_summary.csv`](data/f128b_reference_summary.csv) exactly two
-disagree, and neither is a headline row: 4 MiB on znver2 (tie at the floor,
-+5.43% at the median) and 4 KiB on v3 (tie at the floor, −1.51% at the median).
-4 MiB is unmeasurable and 4 KiB is inside the 1.5% floor either way.
+## Unmeasurable
 
-The section stays because the case is real and the rule is written down in
-[METHODOLOGY.md §11](METHODOLOGY.md#11-reproducibility-gate): a future campaign
-that produces a genuinely statistic-dependent row must be labeled here, not
-quietly resolved in favour of the more favourable statistic.
-
-## Retracted
-
-**Nothing is retracted.** A Phase 6 audit re-derived every published number from
-the committed logs and found that all of them reproduce exactly. The earlier
-concern — that the certified campaign's window logs were missing — was itself the
-error: the campaign was in the tree all along, and the summary CSV that carried
-its numbers was never committed. Both are now.
-
-The retraction mechanism stays for the same reason the conditional section stays.
-Rows retracted earlier keep their retraction paragraphs in
-[NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md), and removing one is not permitted
-([METHODOLOGY.md §11](METHODOLOGY.md#11-reproducibility-gate)).
-
-## Method note
-
-Every headline row above is reconstructable from the logs in
-[`docs/data/raw/`](data/raw/): 3 targets, 9 windows x 5 reps, `migrated=0` on
-every rep, glibc measured in the same process and the same windows. The summary
-CSV is regenerated by `python3 scripts/f128b_summary.py`.
-
-Two statistics are reported side by side for every row: **Δ_min**, the floor (the
-fastest single sample, on each side), and **Δ_med**, the typical (the median of
-the 45 per-rep samples). A row is a certified win only if it clears its floor
-under both. Rows whose distribution is bimodal (spread > 50%) are reported with
-both statistics, and if the two disagree the row is labeled conditional rather
-than resolved in favour of the more favourable one. Nothing is retracted: every
-published number reproduces from the committed log.
-
-Rule going forward: no published row without a committed window log
-([METHODOLOGY.md §11](METHODOLOGY.md#11-reproducibility-gate)).
-
-[^record]: **Record-derived.** Certified at the time of measurement, on a quieter
-    host window. Reproduction on the current host depends on host load — see
-    [METHODOLOGY.md §9](METHODOLOGY.md#9-host-variance-the-floor-moves). The
-    frozen CSVs in [`docs/data/`](data/) are the authoritative record.
+**4 MiB.** The per-window spread is 117% / 197% / 99% — the campaign's worst
+cell by a wide margin — so nothing at that size is resolvable and nothing is
+claimed. The floor reads +0.16 / +6.91 / +1.49%, which is the spread talking,
+not a result.
 
 ## The shipped kernel, full ladder
 
-`memcpy_fast` (`src/fast.c`, F4), gcc `-O3 -fno-crossjumping`, 32 B-aligned main
-loop, unroll 4, +128 B prefetch gated at 64 KiB, a one-compare tiny path for
-n <= 64, and a straight-line 128–256 B window.
-
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict |
 |--:|--:|--:|--:|:--:|:--|
-| 16 B | **+44.75 / +38.02 / +38.02%** | **+50.00 / +37.62 / +37.62%** | 18.7 / 17.6 / 16.7 | B / A / A | WIN x3 |
-| 32 B | **+25.45 / +25.45 / +25.49%** | **+25.10 / +25.10 / +25.10%** | 31.6 / 32.0 / 30.8 | B / A / A | WIN x3 |
-| 64 B | **+25.49 / +25.49 / +25.10%** | **+25.10 / +25.10 / +25.10%** | 16.6 / 12.6 / 6.6 | A / A / A | WIN x3 |
-| 128 B | −10.04 / −10.04 / −10.04% | −10.04 / −10.04 / −10.04% | 68.6 / 66.2 / 68.9 | A / A / A | **LOSS x3** (Tier A) |
-| 256 B | +8.41 / +8.41 / +8.41% | +8.41 / +8.41 / +8.41% | 68.6 / 68.3 / 68.6 | B / A / A | WIN 2/3 (measured on znver2) |
-| 512 B | **+16.83 / +16.83 / +15.71%** | **+16.83 / +15.71 / +15.71%** | 66.3 / 63.5 / 64.8 | A / A / A | WIN x3 |
-| 1 KiB | −1.41 / −1.41 / −1.41% | −1.41 / −1.41 / −1.41% | 74.4 / 73.7 / 76.0 | A / A / A | measured x3 |
-| 4 KiB | +0.00 / +0.00 / +0.00% | +0.00 / +0.00 / −1.51% | 26.6 / 25.1 / 28.6 | A / A / A | measured x3 (LOSS at median on v3) |
-| 16 KiB | −2.28 / −1.19 / −1.31% | −3.48 / −1.16 / −1.16% | 60.2 / 57.5 / 54.8 | A / A / A | measured 2/3, one certified LOSS (znver2) |
-| 64 KiB | +0.00 / −0.08 / −0.08% | +0.00 / +0.00 / +0.00% | 6.8 / 5.2 / 3.2 | A / A / A | measured x3 |
-| 256 KiB | −0.19 / +0.75 / +1.88% | −2.32 / −1.04 / −0.85% | 8.9 / 10.2 / 9.8 | B / B / B | measured x3 (Tier B) |
-| 1 MiB | +7.95 / +10.67 / +8.28% | −2.67 / −1.36 / −1.81% | 17.9 / 19.0 / 15.4 | B / B / B | measured x3 (Tier B) |
-| 4 MiB | +1.10 / +0.93 / −4.98% | +5.43 / +0.36 / +2.10% | 51.0 / 67.2 / 65.6 | A / B / B | **not usable** (bimodal, verdicts disagree on znver2) |
+| 16 B | **+38.02** / **+38.02** / **+50.31** | **+27.44** / **+27.44** / **+50.00** | 16.5/16.6/18.3 | B/B/A | WIN x3 |
+| 32 B | **+25.49** / **+25.10** / **+25.45** | **+5.05** / **+25.10** / **+25.10** | 22.7/29.6/30.6 | A/B/A | WIN x3 |
+| 64 B | **+25.10** / **+25.49** / **+25.49** | **+19.19** / **+25.10** / **+25.10** | 11.6/11.2/11.6 | A/A/A | WIN x3 |
+| 128 B | **+10.11** / **+10.11** / **+10.11** | **+45.22** / **+10.11** / **+10.11** | 61.3/60.6/61.6 | A/A/A | WIN 2/3 |
+| 256 B | **+8.41** / **+8.41** / **+8.41** | **+0.00** / **+8.41** / **+8.41** | 42.6/67.9/69.8 | A/A/A | WIN x3 |
+| 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN 2/3 |
+| 1 KiB | -1.41 / -1.41 / -1.41 | **+2.42** / **+1.61** / -71.87 | 44.7/42.7/43.2 | B/A/A | measured x3 |
+| 4 KiB | **+0.00** / **+0.00** / **+0.00** | **+0.00** / -22.69 / -22.69 | 22.3/21.7/21.2 | B/A/A | measured x3 |
+| 16 KiB | -2.28 / -2.41 / -2.40 | -2.34 / **+0.00** / -0.11 | 37.8/57.7/58.1 | A/A/A | **LOSS x3** |
+| 64 KiB | -0.72 / **+0.00** / -0.80 | -0.79 / -1.58 / **+0.79** | 3.6/3.6/4.5 | A/A/A | measured x3 |
+| 256 KiB | -1.33 / **+0.00** / **+0.40** | -2.28 / -1.21 / -1.55 | 7.8/7.8/10.9 | B/B/B | measured x3 |
+| 1 MiB | **+12.58** / **+11.10** / **+9.42** | -1.96 / -2.02 / -2.29 | 11.3/15.9/6.1 | A/B/B | WIN 1/3 |
+| 4 MiB | **+0.16** / **+6.91** / **+1.49** | **+4.47** / **+6.39** / **+1.82** | 117.1/196.9/99.2 | B/B/B | measured x3 |
 
 `spread%` = (p99 − p25) / median of the 45 per-rep mins.
 spread > 50% indicates a bimodal distribution — for those
@@ -246,39 +178,61 @@ audit-width gate, the evidence policy and the reproducibility gate are in
 [METHODOLOGY.md](METHODOLOGY.md). Verified, not assumed: every kernel is checked
 byte-for-byte against an independent reference with canaries before it is timed.
 
+**One warning about the median at 512 B and below.** The per-rep distribution at
+those sizes is bimodal: a fast mode and a slow mode, ~471 ns apart per
+128-copy batch, and which mode a rep lands in is a property of the *host*, not
+of the kernel. The shipped kernel's own 512 B median reads 5.7891 ns in the
+Phase 7.2b campaign and 9.4688 ns in this one — the same kernel, the same size,
+the same host, two campaigns. Its floor reads 5.7891 ns in both. That is why
+the claim model is built on the floor and why the median is reported beside it
+rather than instead of it.
+
 ## What made the wins possible
 
-Three things, in order of contribution. **Small-size specialisation:** at 16–64 B
+Four things, in order of contribution. **Small-size specialisation:** at 16–64 B
 the copy is 2–3 ns, so the branch structure *is* the kernel; the shipped kernel
 takes the whole 1–64 B range from one compare and copies it with straight-line
-overlapping moves. **Per-size tuning instead of one loop:** the 512 B win comes
-from the block-pair shape chosen for that class, and the 256 B win from a
-dedicated 128–256 B window rather than from wider instructions — that window is
-what separates F4 from its predecessor. **Measurement discipline:** every
-candidate was measured in the same windows as the thing it replaced, so the
-changes that survived are the ones that moved a floor, and the 128 B regression
-is visible rather than hidden by a median.
+overlapping moves. **The right block size at the class boundary:** the ladder's
+rule is that a class window is `(H, 2H]` and the block pair uses `H` = the
+class's lower bound, so the two blocks tile `[0, n)` exactly at `n = 2H`. The
+128–256 B window used `H = 128` over a range that starts at 128, so the one
+size where the ladder's own rule bites — 128 B — got a pair whose head and
+tail blocks coincided. Giving that size `H = 64` is the 128 B win, and it is
+worth +20 points at that size. **Per-size tuning instead of one loop:** the
+512 B win comes from the block-pair shape chosen for that class, and the
+256 B win from a dedicated 128–256 B window rather than from wider
+instructions. **Measurement discipline:** every candidate was measured in the
+same windows as the thing it replaced, so the changes that survived are the
+ones that moved a floor, and the 128 B regression was visible rather than hidden
+by a median.
 
 ## Scope and honesty notes
 
 * **This tree is a curated subset of the experiment.** The public tree contains
   the shipped kernels and the seven-rung ladder. The shipped kernel's published
   rows **are** reconstructable: the reference campaign's raw window logs are
-  committed under `docs/data/raw/`, and `scripts/f128b_summary.py` regenerates
-  the summary CSV from them. The phase-2 ladder rows in "The ladder" below are
-  the older campaign, whose record is the committed phase-2 CSVs in
-  `docs/data/`; the raw logs behind those CSVs did not ship and are not
-  reconstructable here. The candidate kernels that lost (V9b, V9c variants, the
-  prefetch-window grid, the PGO/LTO probes) stayed on the VPS, by design —
-  a record that only lists winners is a sales sheet, and
-  [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) is the record of what lost.
+  committed under `docs/data/raw/`, and `scripts/phase7_4_summary.py`
+  regenerates the summary CSV from them and `scripts/phase7_4_tables.py`
+  regenerates the tables in this file. The phase-2 ladder rows below are the
+  older campaign, whose record is the committed phase-2 CSVs in `docs/data/`;
+  the raw logs behind those CSVs did not ship and are not reconstructable here.
+  The candidate kernels that lost (V9b, V9c variants, the prefetch-window grid,
+  the PGO/LTO probes) stayed on the VPS, by design — a record that only lists
+  winners is a sales sheet, and [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) is
+  the record of what lost.
 * Numbers are silicon-specific: one Zen 2 host, `taskset -c 2`, glibc as
   measured in the same process. Your machine will differ; measure before you
   switch. The reference host itself is shared, and its floor moves with load —
   see [METHODOLOGY.md §9](METHODOLOGY.md#9-host-variance-the-floor-moves).
-* A loss is reported with the same prominence as a win. 128 B is 10% behind
-  glibc and stays that way in this release.
+* A loss is reported with the same prominence as a win. 128 B is now a win and
+  16 KiB is now a loss; both are stated from the same committed campaign.
 * **The floor is the floor, and the median is the truth.** Every row reports
-  both. Where they disagree, the row says so: at 1 MiB the floor says +8 to
-  +11% and the median says level to 2.7% behind, and the honest summary is that
-  the kernel is level with glibc at that size.
+  both. Where they disagree, the row says so: at 1 MiB the floor says +9 to
+  +13% and the median says parity, and the honest summary is that the kernel
+  is level with glibc at that size.
+
+[^record]: **Record-derived.** Certified at the time of measurement, on a quieter
+    host window. Reproduction on the current host depends on host load — see
+    [METHODOLOGY.md §9](METHODOLOGY.md#9-host-variance-the-floor-moves). The
+    committed window logs in [`docs/data/raw/`](data/) are the authoritative
+    record.

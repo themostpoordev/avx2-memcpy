@@ -69,7 +69,7 @@ SRCS      := $(wildcard src/*.c) $(wildcard src/rungs/*.c) $(wildcard bench/*.c)
 ASM_SRCS  := $(wildcard src/rungs/*.S)
 SRC_OBJ   := $(patsubst %.c,%.o,$(SRCS)) $(patsubst %.S,%.o,$(ASM_SRCS))
 
-GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c
+GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c src/rungs/f4_baseline.c
 
 # The library half of the build, without the harness's main(). route_check links
 # this, because it has its own main() and never touches a clock.
@@ -78,9 +78,13 @@ LIB_SRCS  := $(wildcard src/*.c) $(wildcard src/rungs/*.c)
 LIB_OBJ    = $(addprefix build/$(EXP_T)/,$(patsubst %.c,%.o,$(LIB_SRCS)) \
                                       $(patsubst %.S,%.o,$(ASM_SRCS)))
 BENCH_OBJ  = $(addprefix build/$(EXP_T)/,bench/bench.o bench/pmu.o)
-GCC_EXTRA_fast.c := -fno-crossjumping
+# The deliverable carries -falign-labels=64: it is part of the kernel, not
+# cosmetics. Without it the 32..64 B path loses the 64-byte alignment of its
+# out-of-line branch target, which costs 16% at 32 B and 64 B - certified wins.
+# See src/fast.c.
+GCC_EXTRA_fast.c := -fno-crossjumping -falign-labels=64
 GCC_EXTRA_mid.c  := -fno-crossjumping
-# The Phase 7 rungs are the F4 shape with one knob changed, so they must be
+# Phase 7.2/7.3 rungs: the F4 shape with one knob changed, so they must be
 # compiled by the same compiler with the same flags as the kernel they are
 # compared against, or the comparison measures the compiler and not the knob.
 GCC_EXTRA_avx2_f4win64.c  := -fno-crossjumping
@@ -89,6 +93,10 @@ GCC_EXTRA_avx2_f4win129.c := -fno-crossjumping
 # affects this rung's translation unit only and leaves the shipped
 # deliverable's object byte-identical.
 GCC_EXTRA_f4win64_aligned.c := -fno-crossjumping -falign-labels=64
+# The pre-promote F4, kept as the control for the Phase 7.4 comparison. It
+# must NOT get -falign-labels=64: that flag is what the promoted kernel adds,
+# and a baseline with it would be the candidate, not the baseline.
+GCC_EXTRA_f4_baseline.c := -fno-crossjumping
 
 BINS := $(addprefix bench/bench_,$(TARGETS))
 EXP_T := znver2

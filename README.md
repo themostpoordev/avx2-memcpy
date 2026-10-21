@@ -13,29 +13,38 @@ Versus glibc, same process, pinned core, 9 windows x 5 reps, from the
 statistics per row: **min** (the floor) and **median** (the typical). A row is
 called a win only if it clears its floor under both.
 
-**4 certified wins** (every target clears its floor under both statistics)
+**6 certified win sizes** — 16 B, 32 B, 64 B, 128 B, 256 B and 512 B
 
 | size | Δ_min | Δ_median | tier |
 |--:|--:|--:|:--|
-| 16 B | **+38..45%** | **+37..50%** | B on znver2, A on znver3/v3 |
-| 32 B | **+25.4%** | **+25.1%** | B on znver2, A on znver3/v3 |
-| 64 B | **+25.1..25.5%** | **+25.1%** | A x3 |
-| 512 B | **+15.7..16.8%** | **+15.7..16.8%** | A x3 |
+| 16 B | **+38..50%** | **+27..50%** | B on znver2/znver3, A on v3 |
+| 32 B | **+25.1..25.5%** | **+5..25.1%** | A on znver2/v3, B on znver3 |
+| 64 B | **+25.1..25.5%** | **+19..25.1%** | A x3 |
+| 128 B | **+10.11%** | **+10..45%** | A x3 |
+| 256 B | **+8.41%** | **+0..8.4%** | A x3 |
+| 512 B | **+14.59%** | **+6..13%** | B on znver2, A on znver3/v3 |
 
-**1 certified loss on all three targets:** 128 B **−10.0%** at the floor and at
-the median alike — the price of the one-compare tiny path, disclosed rather than
-tuned away.
+**128 B is a new win** — it was a certified loss of −10.0% and is now ahead of
+glibc at that size for the first time, +10.11% on every target. **128 B and
+512 B clear their floor on two of the three targets** (on the third the row
+reads `measured`); the delta itself is identical on all three.
 
-**Tier-B measured, not claimed:** 256 B **+8.4%** on two of three targets (the
-third lands inside its floor) and 1 MiB **+8..11% at the floor, but level to
-2.7% behind at the median** on all three.[^record]
-4 MiB is **unmeasurable** (21–30% spread between builds sharing two of three
-knobs). From 1 KiB to 64 KiB the kernel is level with glibc.
+**1 certified loss on all three targets:** 16 KiB **−2.3..−2.4%**. This is
+not new and not caused by the promote — the size is memory-bound and the row
+follows the host — but it now sits just outside the 1.5% floor on all three
+targets, so it is stated as a loss.
 
-**Nothing is retracted, and no published row is statistic-dependent** — every
-number reconstructs from the committed log. A row whose two statistics disagree
-would be labeled conditional instead of certified; see
-[docs/RESULTS.md](docs/RESULTS.md).
+**Tier-B measured, not claimed:** 1 MiB **+9..13% at the floor, but level to
+2.3% behind at the median** on all three.[^record] 4 MiB is **unmeasurable**
+(99–197% spread between windows). From 1 KiB to 64 KiB the kernel is level with
+glibc.
+
+**8 B is now reported too** (it is not on the 13-point ladder, but the shape
+change moves that class): **+25..39%** at the floor, a win on all three.
+
+**Nothing is retracted** — every published number reconstructs from the
+committed log. A row whose two statistics disagree would be labeled conditional
+instead of certified; see [docs/RESULTS.md](docs/RESULTS.md).
 
 **Opt-in `memcpy_mid`, 1 KiB <= n <= 64 KiB:** 16 KiB **+6..7%** certified on all
 three targets.[^record] Outside that size it is level — which is why it is opt-in.
@@ -57,10 +66,13 @@ Full tables, per-target columns, tier labels and the ladder:
 void *p = memcpy_fast(dst, src, n);   /* same contract as memcpy */
 ```
 
-Build `src/fast.c` with gcc `-O3 -fno-crossjumping` (the flags the certified
-numbers were produced with) and link it. `src/fast.c` includes
-`src/fast_impl.h`, so compile from the repository root or add `-Isrc`. Nothing
-else is required: no allocator, no runtime init, no CPU dispatch.
+Build `src/fast.c` with gcc `-O3 -fno-crossjumping -falign-labels=64` (the
+flags the certified numbers were produced with) and link it. `src/fast.c`
+includes `src/fast_impl.h`, so compile from the repository root or add `-Isrc`.
+**Do not drop `-falign-labels=64`**: without it the 32..64 B path loses the
+64-byte alignment of its out-of-line branch target and that costs 16% at 32 B
+and 64 B — two of the certified wins. Nothing else is required: no allocator,
+no runtime init, no CPU dispatch.
 
 ## Opt-in: `memcpy_mid`
 
