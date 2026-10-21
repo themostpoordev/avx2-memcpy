@@ -77,6 +77,43 @@
  *   should (V9c, which had no window at all, was -20.1% at 128 B). It is a
  *   measurement and never a candidate: even if it wins, it is fragile, and
  *   it must not be promoted.
+ *
+ * RESULT (measured 2026-10-21; the criteria above are UNCHANGED from commit
+ * 82c330d, which was made BEFORE any measurement ran)
+ *
+ *   A1  PASS on all three targets. 128 B: +18.31% against F4, identical on
+ *       znver2, znver3 and v3 (2.8 ns against F4's 3.4 ns). The shape
+ *       hypothesis is CONFIRMED: giving n = 128 the H = 64 pair is worth
+ *       about 18% at that size, and the certified -10.04% loss was caused by
+ *       the H = 128 pair's coincident head and tail blocks.
+ *
+ *   A2  FAIL on all three targets. 32 B and 64 B regress by -16.26% to
+ *       -16.87%, and 512 B by -2.70% (znver2, znver3); each is a certified
+ *       LOSS against F4 under the two-tier model.
+ *
+ *   A3  PASS. `make gate` passes, and `--verify` passes for this rung on all
+ *       three targets.
+ *
+ *   The regression is NOT the knob. The 16..64 B code is byte-identical to
+ *   the shipped kernel's - the same instructions at the same offsets 0x0..0x34
+ *   - so the knob cannot be its cause. What changed is the ALIGNMENT of the
+ *   out-of-line 32..64 B branch target: in the shipped kernel that target sits
+ *   at 0x1c0, which is 64-byte aligned; in this rung it moved to 0x1a0, which
+ *   is only 16-byte aligned, while the n <= 15 path took the 64-byte-aligned
+ *   0x180 instead. This is the layout sensitivity the F2/F3 work already
+ *   documented ("moving the alignment decision around cost more than it
+ *   saved"), and it costs 16% on a 2 ns copy.
+ *
+ * CONSEQUENCE: this rung is REJECTED and is NOT promoted. The shipped
+ *   kernel keeps its 128..256 B window unchanged, and its certified 128 B
+ *   loss stands. The result is written up in docs/NEGATIVE_RESULTS.md; the
+ *   campaign logs are committed under docs/data/raw/ and the acceptance
+ *   summary is docs/data/phase7_f4win_acceptance_summary.csv.
+ *
+ *   The next experiment, if there is one, is a SEPARATE one with its own
+ *   criteria fixed in advance: keep the H = 64 semantics at n = 128 and
+ *   restore the 64-byte alignment of the 32..64 B branch target, then re-run
+ *   this same gate. That is not attempted here.
  */
 #define TUNED_FN         memcpy_avx2_f4win64
 #define TUNED_UNROLL     4

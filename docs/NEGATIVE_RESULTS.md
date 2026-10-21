@@ -82,6 +82,64 @@ result that the simpler shape did not already have, and `-funroll-loops` on its
 own cost up to 19%. Verdict: the shipped kernel is the simplest point in the
 grid that cleared the floors.
 
+## The 128 B block-pair shape — hypothesis CONFIRMED, candidate REJECTED
+
+The shipped kernel is a certified loss at 128 B (−10.04% at both the floor and
+the median, on all three targets). The cause is structural, and the Phase 7
+campaign confirmed it.
+
+**The defect.** The class ladder's rule is that a class window is `(H, 2H]` and
+the block pair uses `H` = the class's *lower* bound, so the two blocks tile
+`[0, n)` exactly at `n = 2H`. For the `(64, 128]` class that is `H = 64`, and
+it tiles n = 128 exactly. But the F4 window covers `128 <= n <= 256` with
+`T_BLOCKPAIR(4)` — `H = 128` — and it is tested *before* the flat class chain.
+At n = 128 the window's head block and tail block are therefore the same four
+32 B blocks: the kernel issues **8 loads and 8 stores for a 128 B copy** where
+glibc issues 4 and 4.
+
+**The signature.** This kernel's 128 B copy (3.4238 ns) costs *more* than its
+own 256 B copy (3.4023 ns) on all three targets — half the bytes, the same
+work — while glibc's 128 B copy (3.1113 ns) is 16% cheaper than its 256 B copy
+(3.7148 ns).
+
+**The experiment.** Two rungs were built from the shipped body with one knob
+changed each, and measured against the shipped F4 in the same windows, in the
+same process, on the same host state. The acceptance test was written into
+`src/rungs/avx2_f4win64.c`'s header and committed (`82c330d`) **before** any
+measurement ran.
+
+| rung | shape at n = 128 | 128 B vs F4 | regression gate | verdict |
+|---|---|--:|---|---|
+| `f4win64` (H1b, primary) | H = 64 inside the window, one extra compare | **+18.31%** | **FAIL** — 32/64 B −16.3..−16.9%, 512 B −2.7% | rejected |
+| `f4win129` (H1a, control) | H = 64 via the class chain, four extra compares | +9.13% | PASS | never promotable by construction |
+
+The hypothesis is **confirmed**: giving n = 128 the H = 64 pair is worth
+**+18.31%** at that size, identically on znver2, znver3 and v3 (2.8 ns against
+F4's 3.4 ns). The certified −10.04% loss was caused by the coincident blocks.
+
+**And the primary candidate is still rejected**, because the pre-registered
+regression gate failed. The cause of the regression is *not* the knob: the
+16..64 B code is byte-identical to the shipped kernel's — the same instructions
+at the same offsets `0x0..0x34` — so the knob cannot be responsible. What
+changed is the **alignment of the out-of-line 32..64 B branch target**: in the
+shipped kernel it sits at `0x1c0`, which is 64-byte aligned; in the rung it
+moved to `0x1a0`, which is only 16-byte aligned, while the `n <= 15` path took
+the 64-byte-aligned `0x180` instead. A 16% swing on a 2 ns copy, from
+alignment alone — the same layout sensitivity the F2/F3 work already
+documented ("moving the alignment decision around cost more than it saved").
+
+**Consequence.** The shipped kernel keeps its 128..256 B window unchanged, and
+its certified 128 B loss stands. Nothing was promoted: promoting would have
+traded a certified 128 B loss for certified 32 B and 64 B losses, and the
+gate exists precisely to refuse that trade. The campaign logs are committed
+under [`docs/data/raw/`](data/raw/) and the acceptance summary is
+[`docs/data/phase7_f4win_acceptance_summary.csv`](data/phase7_f4win_acceptance_summary.csv).
+
+The next experiment, if there is one, is a separate one with its own criteria
+fixed in advance: keep the H = 64 semantics at n = 128 *and* restore the
+64-byte alignment of the 32..64 B branch target, then re-run this same gate.
+That was not attempted here.
+
 ## 1 MiB row — audited, not retracted
 
 Published: +8–13% vs glibc at 1 MiB at the floor, and level to 2.7% behind at the

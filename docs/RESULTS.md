@@ -55,7 +55,15 @@ Two of these deserve a second look:
   the digit (+16.83%). The distribution is wide; the verdict does not move with
   the statistic.
 * **32 B on znver2 is the tightest cell in the table**: Δ_med +25.10% against a
-  25.00% floor. A certified win, but by 0.10 percentage points.
+  25.00% floor. A certified win, but by 0.10 percentage points — and the
+  margin is an artefact of the *floor*, not of the kernel. That cell is Tier B
+  because **one window of nine** came in at 2.37 ns against 1.86–1.87 ns in the
+  other eight, and the tier is a max/min ratio over per-window minima, so a
+  single noisy window moves the floor from 1.5% to 25%. The kernel's own floor
+  agrees to 0.5% across those eight windows. The 25% floor is doing its job —
+  it is saying "this cell is noisy, so only a difference bigger than 25% is
+  trustworthy" — and the difference measured is 25.1%. The row is real; the
+  margin is thin; both are stated rather than smoothed.
 
 ## Certified loss (Tier A)
 
@@ -66,6 +74,17 @@ Two of these deserve a second look:
 The kernel buys the 16–64 B band with one extra dispatch level, and 128 B pays
 about one timer step for it. It is disclosed, not tuned away, and the loss is
 identical under the floor and under the median.
+
+**The cause is known and the fix is not free.** At exactly 128 B the window's
+128-byte block pair has its head and tail blocks coincident, so the kernel
+issues 8 loads and 8 stores for a 128 B copy where glibc issues 4 and 4 — this
+kernel's 128 B copy costs *more* than its own 256 B copy, on all three
+targets. A Phase 7 experiment confirmed the cause (giving that size the 64-byte
+pair is worth +18.31% there) and the fix was still **rejected**, because the
+resulting code layout cost 16% at 32 B and 64 B — the certified wins. The
+full record, with the acceptance test that was fixed before the measurement
+ran, is in [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md). The shipped kernel
+keeps its window unchanged, and this loss stands.
 
 ## Measured, not claimed (Tier B — inside the 25% floor)
 
