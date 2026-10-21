@@ -400,6 +400,55 @@ and the pre-registration, criteria, campaigns and results are in
 are `docs/data/raw/phase7_p83_*.windows.log` and
 `docs/data/raw/phase7_p832_*.windows.log`.
 
+## 1 MiB — closed as structural (Phase 8)
+
+Two variants were attempted, both pre-registered and both with a shape control:
+a **prefetch distance of 4096 B** (instead of 128 B, inside a 512 KiB–2 MiB
+band) and a **prefetch coverage pair** (a second prefetch at +192, so both
+64 B lines of the next iteration are covered in software). **Both failed P2**
+(the floor win was lost: +8.12 / +7.56 / +7.36% and +10.31 / +8.50 / +10.90%
+against the reference's +12.58 / +11.10 / +9.42%) **and P3** (the median did
+not move: −4.35 / −3.61 / −2.80% and −2.14 / −1.85 / −2.32%).
+
+**The mechanism.** At 1 MiB the copy runs at either the **store-port ceiling**
+(~32 B/cycle, 91 GB/s) or at the **memory-hierarchy rate** (~27 B/cycle,
+76 GB/s) — and glibc only ever gets the second. The fast mode is a per-rep
+lottery: the kernel wins it in about a third of its reps (14–15 of 45 in the
+reference campaign, 6–18 of 45 across the four campaigns that measured it) and
+glibc never wins it.
+
+**No kernel-side lever moves this.** Prefetch distance, prefetch coverage,
+unroll, the aligned loop, `PREFETCHW` and NT stores have all been tested and
+closed — the last two by the alignment-unroll grid and the NT sweep, the first
+two by the two attempts above. The row is reported as **parity at the median,
+win at the floor, permanently**. The full record, with both campaigns'
+decompositions, is in the section above and in
+[`docs/phase8_3_preregistration.md`](phase8_3_preregistration.md).
+
+## 16 KiB — closed as a tie, not a loss (Phase 8.2)
+
+Quiet-window re-certification moved 16 KiB from −2.28 / −2.41 / −2.40
+(Phase 7.4, host-limited) to **−1.19 / −1.19 / −0.12** (Phase 8.2, quiet
+window) — inside the 1.5% floor on all three targets. **Not caused by any code
+change**: the promoted kernel was already **+1.16% faster** than the previous
+deliverable at this size, and the same kernel read −1.19% there in the
+Phase 7.4 reference campaign. The Phase 7.4 number was a host artifact — the
+size is memory-bound, so the row follows the host, and the quiet-window gate
+(sampled before the campaign, three times 10 s apart, band below 2% and
+stable) is what caught it. The regression gate passed on every cell, so no
+certified row moved.
+
+## 256 B — conditional, documented as structural (Phase 8.2)
+
+A1_256 failed: the median did not reach +1.5% in a quiet window (+0.00 /
+−0.63 / +0.00%). The row stays **a certified win at the floor** (+8.41% on all
+three targets) and **a tie at the median**. Same bimodal mechanism as 1 MiB;
+no fix was attempted, because the 1 MiB attempts had already closed the
+prefetch mechanism (distance and coverage both measured, both rejected) and
+every other lever was closed by the grid or the NT sweep. Its floor is
+identical to the Phase 7.4 value, and the Phase 7.4 campaign remains its
+reference.
+
 ## What this list is for
 
 If you are about to try one of these, the measurement says where it ends. If you
