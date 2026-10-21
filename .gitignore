@@ -45,6 +45,8 @@ src/perf6/
 !docs/data/*.csv
 !docs/data/raw/
 !docs/data/raw/*.windows.log
+!docs/data/raw/ladder/
+!docs/data/raw/ladder/*.windows.log
 !experiments/hybrid/data/
 !experiments/hybrid/data/*.csv
 
