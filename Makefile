@@ -69,7 +69,7 @@ SRCS      := $(wildcard src/*.c) $(wildcard src/rungs/*.c) $(wildcard bench/*.c)
 ASM_SRCS  := $(wildcard src/rungs/*.S)
 SRC_OBJ   := $(patsubst %.c,%.o,$(SRCS)) $(patsubst %.S,%.o,$(ASM_SRCS))
 
-GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c
+GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c
 
 # The library half of the build, without the harness's main(). route_check links
 # this, because it has its own main() and never touches a clock.
@@ -85,6 +85,10 @@ GCC_EXTRA_mid.c  := -fno-crossjumping
 # compared against, or the comparison measures the compiler and not the knob.
 GCC_EXTRA_avx2_f4win64.c  := -fno-crossjumping
 GCC_EXTRA_avx2_f4win129.c := -fno-crossjumping
+# Phase 7.2: the alignment attempt. -falign-labels=64 is per-file, so it
+# affects this rung's translation unit only and leaves the shipped
+# deliverable's object byte-identical.
+GCC_EXTRA_f4win64_aligned.c := -fno-crossjumping -falign-labels=64
 
 BINS := $(addprefix bench/bench_,$(TARGETS))
 EXP_T := znver2

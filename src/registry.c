@@ -53,6 +53,11 @@ const impl_t g_impls[] = {
       "falls through to the class chain. Never promotable - see "
       "src/rungs/avx2_f4win64.c" },
 
+    { "f4win64al", memcpy_f4win64_aligned, NULL,
+      "Phase 7.2: F4 with the H=64 case at n=128 AND -falign-labels=64, so the "
+      "32..64 B branch target is 64-byte aligned. Pre-registered criteria in "
+      "src/rungs/f4win64_aligned.c" },
+
     /* ---- the ladder (src/rungs/) ---------------------------------------- */
     { "naive", memcpy_naive, NULL,
       "rung 1: byte-by-byte loop, 1 B load + 1 B store per byte" },

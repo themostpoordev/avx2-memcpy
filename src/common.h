@@ -51,6 +51,7 @@ void *memcpy_rep(void *dst, const void *src, size_t n);     /* rung 7: rep movsb
  * campaign; see each file's header for its acceptance test. */
 void *memcpy_avx2_f4win64(void *dst, const void *src, size_t n);  /* H1b: H=64 at n=128 */
 void *memcpy_avx2_f4win129(void *dst, const void *src, size_t n); /* H1a control: no window at 128 */
+void *memcpy_f4win64_aligned(void *dst, const void *src, size_t n); /* Phase 7.2: H1b shape, aligned labels */
 
 /* ---- the matching memset ladder ------------------------------------------ */
 void *memset_naive(void *dst, int c, size_t n);
