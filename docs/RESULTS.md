@@ -1,13 +1,23 @@
 # Results — memcpy_fast against glibc on Zen 2
 
-Every number below comes from the **committed** reference campaign
-[`docs/data/raw/phase7_p74_<target>.windows.log`](data/raw/) — 9 windows x 5
-reps per target, `taskset -c 2`, `migrated=0` on every rep, glibc measured in
-the same process and the same windows. The per-size summary is
-[`docs/data/phase7_4_summary.csv`](data/phase7_4_summary.csv), regenerated from
-those logs by `python3 scripts/phase7_4_summary.py`. The tables below are
-generated from that CSV by `python3 scripts/phase7_4_tables.py`, so no
-published number is typed by hand.
+Every number below comes from a **committed** reference campaign
+([`docs/data/raw/`](data/raw/)) — 9 windows x 5 reps per target, `taskset -c 2`,
+`migrated=0` on every rep, glibc measured in the same process and the same
+windows. Two campaigns are in play, and every row says which one it comes
+from:
+
+| campaign | log | reference for |
+|---|---|---|
+| **phase7_4** | [`phase7_p74_<target>.windows.log`](data/raw/) | every size except 16 KiB |
+| **phase8_2** | [`phase7_p82_<target>.windows.log`](data/raw/) | the 16 KiB row (re-certified in a quiet window) |
+
+The per-size summaries are
+[`docs/data/phase7_4_summary.csv`](data/phase7_4_summary.csv) and
+[`docs/data/phase8_2_summary.csv`](data/phase8_2_summary.csv), regenerated
+from those logs by `python3 scripts/phase7_4_summary.py` and
+`python3 scripts/phase8_2_summary.py`. The tables below are generated from the
+CSVs by `python3 scripts/phase7_4_tables.py` and checked against them by
+`python3 scripts/check_published.py`, so no published number is typed by hand.
 
 Two statistics are reported for every row, and they mean different things:
 
@@ -72,16 +82,43 @@ moves the `n <= 15` class, so the size is measured and reported rather than
 left unsaid: +25.49% / +25.49% / +38.93% at the floor, a win on all three
 targets.
 
-## Certified loss
+## Certified loss: none
 
-**16 KiB: −2.28 / −2.41 / −2.40%, a certified loss on all three targets**
-(Tier A, 1.5% floor). This is not new and not caused by the promote: the
-promoted kernel is +1.16% against the kernel it replaced at that size on
-znver2, and the same −2.28% was already published for znver2 under the previous
-reference. What changed is that the other two targets moved from just inside
-the 1.5% floor to just outside it. The size is memory-bound, so the row
-follows the host, and the honest reading is "level with glibc, currently
-2.4% behind".
+**16 KiB was a certified loss of −2.28 / −2.41 / −2.40% in the Phase 7.4
+campaign. It is now a tie: −1.19 / −1.19 / −0.12%**, re-certified in the
+Phase 8.2 quiet-window campaign (below). The size is memory-bound, so the row
+follows the host, and the earlier loss was the host, not the kernel: the
+promoted kernel is *faster* than the kernel it replaced at 16 KiB
+(+1.16 / +0.12 / +1.05%), never slower.
+
+**There is no certified loss anywhere in the table.** Every row is either a
+certified win, `measured` (inside its floor), or unmeasurable — and the two
+rows that were losses before Phase 8 are now: 128 B a certified **win**
+(+10.11%), 16 KiB a **tie** (−1.19 / −1.19 / −0.12%).
+
+## The two quiet-window re-certifications (Phase 8.2)
+
+Phase 8.2 re-measured 16 KiB and 256 B in one quiet-window campaign
+(`docs/data/raw/phase7_p82_<target>.windows.log`, committed; summary in
+`docs/data/phase8_2_summary.csv`), after a gate that sampled the null band
+three times 10 s apart and required it to be below 2% and stable.
+
+* **16 KiB — re-certified as a tie.** Δ_min −1.19 / −1.19 / −0.12%, inside the
+  1.5% Tier A floor on all three targets. At the median it reads −1.56 /
+  −3.85 / −2.32%: inside the 25% floor on znver3 and v3, and 0.06 points
+  outside znver2's 1.5% floor — which is itself inside that target's 0.50% null
+  band, so it is not resolvable. **The Phase 8.2 campaign is the reference for
+  the 16 KiB row.**
+* **256 B — unchanged, still conditional at the median.** Its floor is
+  **+8.41% on all three targets**, identical to the Phase 7.4 value, but its
+  median is +0.00 / −0.63 / +0.00% — the pre-registered criterion (median
+  ≥ +1.5% on ≥ 2 of 3 targets) was **not met**, so the row keeps its Phase 7.4
+  value and Phase 7.4 remains its reference. The substance is the same either
+  way: a win at the floor, a tie at the median.
+* **No certified row moved.** The regression gate (16/32/64/128/512 B and
+  1 MiB, unchanged within the null band relative to the Phase 7.4 reference)
+  passed on every cell. The largest move was 1 MiB at −2.01 points on znver2,
+  inside that cell's 4.48% band.
 
 ## Conditional and parity
 
@@ -111,7 +148,7 @@ not a result.
 | 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN 2/3 |
 | 1 KiB | -1.41 / -1.41 / -1.41 | **+2.42** / **+1.61** / -71.87 | 44.7/42.7/43.2 | B/A/A | measured x3 |
 | 4 KiB | **+0.00** / **+0.00** / **+0.00** | **+0.00** / -22.69 / -22.69 | 22.3/21.7/21.2 | B/A/A | measured x3 |
-| 16 KiB | -2.28 / -2.41 / -2.40 | -2.34 / **+0.00** / -0.11 | 37.8/57.7/58.1 | A/A/A | **LOSS x3** |
+| 16 KiB | -1.19 / -1.19 / -0.12 | -1.56 / -3.85 / -2.32 | 39.6/38.9/4.2 | A/B/B | **measured x3** (a tie) |
 | 64 KiB | -0.72 / **+0.00** / -0.80 | -0.79 / -1.58 / **+0.79** | 3.6/3.6/4.5 | A/A/A | measured x3 |
 | 256 KiB | -1.33 / **+0.00** / **+0.40** | -2.28 / -1.21 / -1.55 | 7.8/7.8/10.9 | B/B/B | measured x3 |
 | 1 MiB | **+12.58** / **+11.10** / **+9.42** | -1.96 / -2.02 / -2.29 | 11.3/15.9/6.1 | A/B/B | WIN 1/3 |
@@ -210,16 +247,16 @@ by a median.
 
 * **This tree is a curated subset of the experiment.** The public tree contains
   the shipped kernels and the seven-rung ladder. The shipped kernel's published
-  rows **are** reconstructable: the reference campaign's raw window logs are
-  committed under `docs/data/raw/`, and `scripts/phase7_4_summary.py`
-  regenerates the summary CSV from them and `scripts/phase7_4_tables.py`
-  regenerates the tables in this file. The phase-2 ladder rows below are the
-  older campaign, whose record is the committed phase-2 CSVs in `docs/data/`;
-  the raw logs behind those CSVs did not ship and are not reconstructable here.
-  The candidate kernels that lost (V9b, V9c variants, the prefetch-window grid,
-  the PGO/LTO probes) stayed on the VPS, by design — a record that only lists
-  winners is a sales sheet, and [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) is
-  the record of what lost.
+  rows **are** reconstructable: the reference campaigns' raw window logs are
+  committed under `docs/data/raw/`, and `scripts/phase7_4_summary.py` and
+  `scripts/phase8_2_summary.py` regenerate the summary CSVs from them and
+  `scripts/phase7_4_tables.py` regenerates the tables in this file. The
+  phase-2 ladder rows below are the older campaign, whose record is the
+  committed phase-2 CSVs in `docs/data/`; the raw logs behind those CSVs did
+  not ship and are not reconstructable here. The candidate kernels that lost
+  (V9b, V9c variants, the prefetch-window grid, the PGO/LTO probes) stayed on
+  the VPS, by design — a record that only lists winners is a sales sheet, and
+  [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) is the record of what lost.
 * Numbers are silicon-specific: one Zen 2 host, `taskset -c 2`, glibc as
   measured in the same process. Your machine will differ; measure before you
   switch. The reference host itself is shared, and its floor moves with load —

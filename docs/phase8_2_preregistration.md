@@ -188,3 +188,58 @@ before the measurement they gate, and neither relaxes the 2% threshold. The
 retry rule is unchanged: the run below is the 5-minute retry, and a second
 failure means **STOP, report "host not quiet today", reschedule, do not
 measure**.
+
+## Results
+
+**Quiet-window gate: PASS** (the 5-minute retry, target znver2). Three
+consecutive samples 10 s apart, 30 reps each:
+
+| size | band, sample 1 | sample 2 | sample 3 | across-sample spread |
+|---|--:|--:|--:|--:|
+| 256 B | 0.000% | 0.000% | 0.000% | 0.000 pp |
+| 512 B | 0.000% | 0.000% | 0.000% | 0.000 pp |
+| 16 KiB | 0.652% | 0.153% | 0.004% | 0.649 pp |
+| 64 KiB | 0.780% | 0.000% | 0.078% | 0.780 pp |
+
+Every band is below 2% and every across-sample spread is below 2 pp. (The
+gate's first run reported FAIL on a field-index bug in its own pass/fail
+expression — it compared the size column against 2.0 instead of the band
+column; the samples themselves passed, and the same collected samples were
+re-evaluated with the corrected expression rather than re-collected.)
+
+**Campaign:** `docs/data/raw/phase7_p82_<target>.windows.log`, 9 windows x 5
+reps, 2520 REPS lines per target, **zero migrated reps**. Summary:
+`docs/data/phase8_2_summary.csv`. Cross-checked against the repo's own
+analyzer (`scripts/analyze.sh` on the same log) — identical numbers.
+
+| criterion | result | verdict |
+|---|---|---|
+| **A1_16** 16 KiB within 1.5% of glibc on ≥ 2 of 3 | −1.19 / −1.19 / −0.12% — 3 of 3 | **PASS** |
+| **A2_16** 16 KiB vs the previous deliverable ≥ +1.0% | +1.16 / **+0.12** / +1.05% | **FAIL on the letter** |
+| **A1_256** 256 B median vs glibc ≥ +1.5% on ≥ 2 of 3 | +0.00 / −0.63 / +0.00% — 0 of 3 | **FAIL** |
+| **A2_256** 256 B min vs glibc ≥ +8% on all 3 | +8.41 / +8.41 / +8.41% | **PASS** |
+| **GATE** 16/32/64/128/512 B, 1 MiB unchanged within the null band | every cell inside its limit | **PASS** |
+
+**A2_16 — the letter and the substance.** The criterion as written requires
+≥ +1.0%; on znver3 the promote is +0.12%, so it is not met on all three
+targets. It *is* met on two of three (znver2 +1.16%, v3 +1.05%), which is the
+count A1_16 uses. The substance is intact either way: **the promote is never
+slower at 16 KiB** (+0.12% to +1.16%), and znver3's +0.12% is inside that
+target's 0.73% null band, so it is indistinguishable from zero. S2_16's
+consequence — "the promote regressed 16 KiB" — therefore does not fire, and
+nothing is reverted. **Reported, not acted on.**
+
+**A1_256 — FAIL, and S1_256 applies.** The 256 B median is +0.00 / −0.63 /
++0.00%: a tie on all three targets, not a win. Per S1_256, the row stays
+"conditional at the median" and is **not re-run**. Its floor is +8.41% on all
+three targets, identical to the Phase 7.4 value, so the certified part of the
+row is unchanged.
+
+**What changed in the published table.** The 16 KiB row moves from a certified
+loss to a tie, and the Phase 8.2 campaign becomes its reference; every other
+size keeps the Phase 7.4 campaign as its reference. The 256 B row keeps its
+Phase 7.4 value. The regression gate passed on every cell, so **no certified
+row moved**.
+
+The published table is checked against the committed CSVs by
+`python3 scripts/check_published.py`: **120 published deltas, 0 mismatches.**

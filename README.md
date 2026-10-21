@@ -29,10 +29,10 @@ glibc at that size for the first time, +10.11% on every target. **128 B and
 512 B clear their floor on two of the three targets** (on the third the row
 reads `measured`); the delta itself is identical on all three.
 
-**1 certified loss on all three targets:** 16 KiB **−2.3..−2.4%**. This is
-not new and not caused by the promote — the size is memory-bound and the row
-follows the host — but it now sits just outside the 1.5% floor on all three
-targets, so it is stated as a loss.
+**No certified losses.** 16 KiB used to be a certified loss (−2.3..−2.4%);
+it is now a **tie** (−1.2..−0.1%), re-certified in a quiet window. The size is
+memory-bound and the row follows the host — the promoted kernel is *faster*
+than the kernel it replaced there (+1.16 / +0.12 / +1.05%), never slower.
 
 **Tier-B measured, not claimed:** 1 MiB **+9..13% at the floor, but level to
 2.3% behind at the median** on all three.[^record] 4 MiB is **unmeasurable**

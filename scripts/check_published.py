@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Check every published delta in docs/RESULTS.md against the committed CSV.
+"""Check every published delta in docs/RESULTS.md against the committed CSVs.
 
     python3 scripts/check_published.py
 
-The CSV is docs/data/phase7_4_summary.csv (the committed reference campaign).
-The markdown is parsed, not trusted: each table row's three per-target deltas
-are compared with the CSV's, for both statistics, and every mismatch is
-reported. 0 mismatches means the published table IS the CSV.
+The CSVs are docs/data/phase7_4_summary.csv and docs/data/phase8_2_summary.csv
+(the committed reference campaigns).  The markdown is parsed, not trusted: each
+table row's three per-target deltas are compared with the CSV's, for both
+statistics, and every mismatch is reported.  0 mismatches means the published
+table IS the CSV.
+
+Rows carry a per-size provenance: the 16 KiB row was re-certified in the
+Phase 8.2 quiet-window campaign and comes from phase8_2_summary.csv; every
+other size comes from phase7_4_summary.csv.
 """
 import csv
 import os
@@ -15,17 +20,27 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV = os.path.join(ROOT, 'docs', 'data', 'phase7_4_summary.csv')
+CSV2 = os.path.join(ROOT, 'docs', 'data', 'phase8_2_summary.csv')
 DOC = os.path.join(ROOT, 'docs', 'RESULTS.md')
 TARGETS = ['znver2', 'znver3', 'v3']
 LABEL = {'8 B': 8, '16 B': 16, '32 B': 32, '64 B': 64, '128 B': 128,
          '256 B': 256, '512 B': 512, '1 KiB': 1024, '4 KiB': 4096,
          '16 KiB': 16384, '64 KiB': 65536, '256 KiB': 262144,
          '1 MiB': 1048576, '4 MiB': 4194304}
+# sizes whose published row comes from the Phase 8.2 quiet-window campaign
+P82_SIZES = {16384}
 
 
 def main():
-    rows = list(csv.DictReader(open(CSV)))
-    by = {(int(r['size']), r['target']): r for r in rows}
+    by = {}
+    for path in (CSV, CSV2):
+        for r in csv.DictReader(open(path)):
+            size = int(r['size'])
+            if path == CSV2 and size not in P82_SIZES:
+                continue
+            if path == CSV and size in P82_SIZES:
+                continue
+            by[(size, r['target'])] = r
 
     bad = 0
     checked = 0
@@ -54,8 +69,8 @@ def main():
                     print('MISMATCH %-8s %-6s %-18s doc=%+.2f csv=%+.2f'
                           % (m.group(1), t, col, got, exp))
                     bad += 1
-    print('checked %d published deltas against %s: %d mismatches'
-          % (checked, os.path.basename(CSV), bad))
+    print('checked %d published deltas against the committed CSVs: %d mismatches'
+          % (checked, bad))
     return 1 if bad else 0
 
 
