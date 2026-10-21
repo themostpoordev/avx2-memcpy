@@ -49,6 +49,19 @@ const impl_t g_impls[] = {
       "the promoted kernel and the kernel it replaces can be measured in the "
       "same windows" },
 
+    /* Phase 8.3 attempt 1 and its control. They sit immediately after
+     * "f4_baseline", i.e. directly after the promoted kernel and the kernel
+     * it replaced, so all four of the kernels the Phase 8.3 criteria compare
+     * are measured within a few cases of each other in the harness's
+     * rep-major loop. */
+    { "pf_big", memcpy_pf_big, NULL,
+      "Phase 8.3 attempt 1: the shipped kernel with a 4096 B prefetch "
+      "distance instead of 128 B, but only for 512 KiB <= n < 2 MiB" },
+
+    { "pf_ctl", memcpy_pf_ctl, NULL,
+      "Phase 8.3 CONTROL: the same runtime-distance loop shape as pf_big, "
+      "with the distance left at 128 B - prices the loop shape alone" },
+
     { "mid", memcpy_mid, NULL,
       "opt-in 1 KiB-64 KiB kernel: 256 B/iteration, three prefetch streams, head "
       "peel gated at 4 KiB. Certifies +6-7% at 16 KiB; NOT part of the fast path" },

@@ -68,6 +68,38 @@
 #define TUNED_PF_MIN 0
 #endif
 
+/* Optional (Phase 8.3): a LONGER prefetch distance for one size band.
+ *
+ * TUNED_PF_BIG_BYTES  the distance to use inside the band (0 = off)
+ * TUNED_PF_BIG_MIN    first size in the band
+ * TUNED_PF_BIG_MAX    one past the last size in the band
+ *
+ * Why a band and not a new TUNED_PF_BYTES: the prefetch is live for every
+ * n >= TUNED_PF_MIN, so a global distance change would also move the 64 KiB
+ * and 256 KiB rows and would reach 4 MiB.  The band is chosen so that only the
+ * intended sizes are affected, and the distance is picked ONCE before the loop.
+ *
+ * NOTE (Phase 8.3): the band test itself is outside the loop, but the LOOP
+ * BODY is not byte-identical to the kernel that compiles the distance in as a
+ * constant: with a runtime distance GCC re-schedules the prefetch (the offset
+ * becomes a register base and an extra lea appears in the iteration).  A
+ * measurement of this knob therefore measures DISTANCE + LOOP SHAPE, which is
+ * why src/rungs/pf_ctl.c exists: the same runtime shape with the distance left
+ * at 128 B, so the shape can be priced separately.
+ *
+ * Off by default: with all three at 0 the compiled object is bit-identical to
+ * the kernel that has been certified.
+ */
+#ifndef TUNED_PF_BIG_BYTES
+#define TUNED_PF_BIG_BYTES 0
+#endif
+#ifndef TUNED_PF_BIG_MIN
+#define TUNED_PF_BIG_MIN 0
+#endif
+#ifndef TUNED_PF_BIG_MAX
+#define TUNED_PF_BIG_MAX 0
+#endif
+
 /* Optional (V9b): take the n <= 64 classes from a SINGLE compare, before the
  * flat-class chain, and copy them with kernel 4's shape.
  *
@@ -294,6 +326,13 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
     else                 pf = 1024;
 #else
     size_t pf = (size_t)TUNED_PF_BYTES;
+#endif
+
+#if TUNED_PF_BIG_BYTES
+    /* Phase 8.3: a longer distance for one size band. Chosen once, before the
+     * loop, so the loop body is untouched. */
+    if (n >= (size_t)TUNED_PF_BIG_MIN && n < (size_t)TUNED_PF_BIG_MAX)
+        pf = (size_t)TUNED_PF_BIG_BYTES;
 #endif
 
 #if TUNED_ALIGNED

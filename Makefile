@@ -69,7 +69,7 @@ SRCS      := $(wildcard src/*.c) $(wildcard src/rungs/*.c) $(wildcard bench/*.c)
 ASM_SRCS  := $(wildcard src/rungs/*.S)
 SRC_OBJ   := $(patsubst %.c,%.o,$(SRCS)) $(patsubst %.S,%.o,$(ASM_SRCS))
 
-GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c src/rungs/f4_baseline.c
+GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c src/rungs/f4win64_aligned.c src/rungs/f4_baseline.c src/rungs/pf_big.c src/rungs/pf_ctl.c
 
 # The library half of the build, without the harness's main(). route_check links
 # this, because it has its own main() and never touches a clock.
@@ -97,6 +97,15 @@ GCC_EXTRA_f4win64_aligned.c := -fno-crossjumping -falign-labels=64
 # must NOT get -falign-labels=64: that flag is what the promoted kernel adds,
 # and a baseline with it would be the candidate, not the baseline.
 GCC_EXTRA_f4_baseline.c := -fno-crossjumping
+
+# Phase 8.3 attempt 1: the shipped kernel with a longer prefetch distance
+# in the 512 KiB-2 MiB band.  Same flags as the deliverable, because the rung
+# must differ from it ONLY in the prefetch distance.
+GCC_EXTRA_pf_big.c := -fno-crossjumping -falign-labels=64
+
+# Phase 8.3 CONTROL: the same flags as the deliverable and as pf_big, so the
+# two differ from the shipped kernel ONLY in the prefetch distance.
+GCC_EXTRA_pf_ctl.c := -fno-crossjumping -falign-labels=64
 
 BINS := $(addprefix bench/bench_,$(TARGETS))
 EXP_T := znver2

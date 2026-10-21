@@ -110,3 +110,53 @@ No installs. No history rewrite. No re-rolling the reference campaign. 4 MiB
 is not touched. Do not touch certified paths beyond what this file specifies.
 Report full distributions, not selected windows. Every number cites its log
 path.
+
+## Amendment after the code review (committed before the campaign)
+
+A code review of the rung (before any measurement) found that the construction
+has a **confound**, and two things are added because of it.
+
+**I-1 — the loop body is not the shipped loop's.** The band test is outside
+the loop, as designed, but because the distance becomes a *runtime* value GCC
+re-schedules the prefetch inside the iteration: the offset becomes a register
+base and an extra `lea` appears. So `pf_big` measures **distance + loop shape**,
+not the distance alone. The two false comments that claimed otherwise (in
+`src/rungs/pf_big.c` and `src/fast_impl.h`) have been corrected.
+
+**The control: `src/rungs/pf_ctl.c`.** The same runtime-distance shape, the
+same band, and the **distance left at 128 B** — so it is semantically the
+shipped kernel, compiled with the loop shape the new knob forces. It prices
+the two effects separately:
+
+| comparison | what it prices |
+|---|---|
+| `pf_ctl` vs `fast` | the loop shape alone |
+| `pf_big` vs `pf_ctl` | the distance alone (4096 B vs 128 B) |
+
+This is the same discipline Phase 7.2 used when its control showed "knob, not
+flag". `pf_ctl` is not a candidate and cannot be promoted; it exists only to
+be compared.
+
+**The campaign therefore measures three kernels** (`fast`, `pf_big`, `pf_ctl`)
+plus `glibc`, `ref_scalar` and `naive`. P1, P2 and P3 are evaluated against
+`pf_big`, and the decomposition is reported alongside.
+
+**Also from the review, and carried into the campaign:**
+
+* the band test adds three instructions to the `n > 512` path, so P1's
+  "unchanged" for 16 KiB means "within the null band", **not**
+  "instruction-identical". 16 KiB's loop body is unchanged and the prefetch is
+  off below 64 KiB; the cost is ~1–2 cycles out of ~650 for a 16 KiB copy.
+* the band edges are a deliberate cliff (n = 2 MiB − 1 gets 4096 B, n = 2 MiB
+  gets 128 B). No campaign size sits on an edge.
+* the prefetch now reaches ~4 KiB past the end of the buffer at 1 MiB.
+  `PREFETCHT0` never faults and never writes, and the harness's buffers are
+  256 MiB, so nothing is touched; formally it is the same pointer-arithmetic
+  past the end that the shipped kernel already does at 128 B, widened 32x.
+* `scripts/phase8_3_accept.py` — the evaluator — is written **before** the
+  campaign, as the review required.
+
+**Sizes measured:** 8, 16, 32, 64, 128, 256, 512 B, 16 KiB, 64 KiB, 256 KiB and
+1 MiB. 64 KiB and 256 KiB are not in the P1 gate, but they are the two rows the
+loop-shape change could touch, so they are measured and reported. **4 MiB is
+not measured** — it is out of scope.

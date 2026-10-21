@@ -53,6 +53,8 @@ void *memcpy_avx2_f4win64(void *dst, const void *src, size_t n);  /* H1b: H=64 a
 void *memcpy_avx2_f4win129(void *dst, const void *src, size_t n); /* H1a control: no window at 128 */
 void *memcpy_f4win64_aligned(void *dst, const void *src, size_t n); /* Phase 7.2: H1b shape, aligned labels */
 void *memcpy_f4_baseline(void *dst, const void *src, size_t n);    /* Phase 7.4 control: the pre-promote F4 */
+void *memcpy_pf_big(void *dst, const void *src, size_t n);        /* Phase 8.3 attempt 1: 4 KiB prefetch distance in the 512 KiB-2 MiB band */
+void *memcpy_pf_ctl(void *dst, const void *src, size_t n);        /* Phase 8.3 CONTROL: the runtime-distance loop shape, distance left at 128 B */
 
 /* ---- the matching memset ladder ------------------------------------------ */
 void *memset_naive(void *dst, int c, size_t n);

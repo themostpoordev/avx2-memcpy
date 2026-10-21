@@ -71,6 +71,10 @@ declared_bits() {
         avx2_f4win64.c|avx2_f4win129.c|f4win64_aligned.c) echo 256 ;;
         # the pre-promote F4, kept as the Phase 7.4 control: also 32 B AVX2 moves
         f4_baseline.c)                                    echo 256 ;;
+        # Phase 8.3 attempt 1: the shipped kernel with a longer prefetch distance
+        pf_big.c)                                        echo 256 ;;
+        # Phase 8.3 control: the same shape as pf_big
+        pf_ctl.c)                                        echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                   echo 256 ;;
         # hand-written asm rungs: 32 B moves
         asm.S|memset_asm.S)                               echo 256 ;;
