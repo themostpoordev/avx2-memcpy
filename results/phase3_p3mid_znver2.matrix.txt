@@ -1,0 +1,146 @@
+# log=results/phase2_6_p3mid_znver2.windows.log  baseline=glibc  op=memcpy  windows=9  rep_lines=5850  migrated_dropped=0
+# null band = |naive vs ref_scalar| in THESE windows (same byte loop, identical instruction streams)
+# columns: size impl min_of_mins_ns gbps cpb delta_vs_glibc_pct rule3 band tier floor tier_verdict spread_pct windows
+# band 16 = 9.53%
+16 ref_scalar 6.6 2.4374 2.0712 -163.20 LOSS LOSS A 9.5 LOSS 0.15 9
+16 glibc 2.5 6.4151 0.6530 +0.00 - - A 9.5 - 0.00 9
+16 naive 7.2 2.2252 1.7586 -188.30 LOSS LOSS A 9.5 LOSS 0.00 9
+16 avx2_final_v2_gcc_noxj 1.6 10.2848 0.3606 +37.62 WIN WIN A 9.5 WIN 0.00 9
+16 avx2_mid 2.5 6.4402 0.5769 +0.39 measured measured A 9.5 measured 0.39 9
+16 avx2_mid_u4 2.2 7.3341 0.5269 +12.53 WIN WIN A 9.5 WIN 0.00 9
+16 avx2_mid_pf1 2.5 6.4402 0.6259 +0.39 measured measured B 25.0 measured 18.55 9
+16 avx2_mid_pfnear 2.8 5.7186 0.6590 -12.18 LOSS LOSS A 9.5 LOSS 0.35 9
+16 avx2_mid_nopeel 2.5 6.4402 0.6917 +0.39 measured measured A 9.5 measured 0.39 9
+16 avx2_mid_ntpf 2.5 6.4402 0.5806 +0.39 measured measured A 9.5 measured 0.39 9
+# band 32 = 5.05%
+32 ref_scalar 12.2 2.6208 1.7848 -389.56 LOSS LOSS A 5.0 LOSS 0.09 9
+32 glibc 2.5 12.8303 0.4284 +0.00 - - A 5.0 - 0.00 9
+32 naive 12.8 2.4949 1.8409 -414.26 LOSS LOSS A 5.0 LOSS 0.08 9
+32 avx2_final_v2_gcc_noxj 2.2 14.7336 0.2732 +12.92 WIN WIN A 5.0 WIN 9.44 9
+32 avx2_mid 2.5 12.8303 0.2969 +0.00 measured measured A 5.0 measured 0.00 9
+32 avx2_mid_u4 2.8 11.3976 0.3453 -12.57 LOSS LOSS A 5.0 LOSS 0.00 9
+32 avx2_mid_pf1 3.1 10.2528 0.3905 -25.14 LOSS LOSS A 5.0 LOSS 0.00 9
+32 avx2_mid_pfnear 3.4 9.3463 0.4139 -37.28 LOSS LOSS A 5.0 LOSS 0.29 9
+32 avx2_mid_nopeel 2.8 11.3976 0.4314 -12.57 LOSS LOSS A 5.0 LOSS 0.00 9
+32 avx2_mid_ntpf 3.1 10.2851 0.3801 -24.75 LOSS LOSS A 5.0 LOSS 0.31 9
+# band 64 = 2.77%
+64 ref_scalar 22.2 2.8778 1.7252 -791.68 LOSS LOSS B 25.0 LOSS 13.86 9
+64 glibc 2.5 25.6606 0.1785 +0.00 - - A 2.8 - 0.00 9
+64 naive 22.9 2.8003 1.6287 -816.34 LOSS LOSS A 2.8 LOSS 9.90 9
+64 avx2_final_v2_gcc_noxj 2.2 29.4673 0.1474 +12.92 WIN WIN A 2.8 WIN 8.09 9
+64 avx2_mid 2.5 25.6606 0.1544 +0.00 measured measured A 2.8 measured 0.00 9
+64 avx2_mid_u4 2.8 22.7953 0.1810 -12.57 LOSS LOSS A 2.8 LOSS 0.00 9
+64 avx2_mid_pf1 3.1 20.5702 0.2018 -24.75 LOSS LOSS A 2.8 LOSS 0.31 9
+64 avx2_mid_pfnear 3.4 18.6927 0.2155 -37.28 LOSS LOSS A 2.8 LOSS 0.29 9
+64 avx2_mid_nopeel 2.8 22.7953 0.1923 -12.57 LOSS LOSS A 2.8 LOSS 0.00 9
+64 avx2_mid_ntpf 3.1 20.5702 0.2181 -24.75 LOSS LOSS A 2.8 LOSS 0.31 9
+# band 128 = 0.00%
+128 ref_scalar 47.6 2.6909 1.5929 -1428.89 LOSS LOSS A 1.5 LOSS 0.04 9
+128 glibc 3.1 41.1404 0.1305 +0.00 - - A 1.5 - 0.00 9
+128 naive 47.6 2.6909 2.0686 -1428.89 LOSS LOSS B 25.0 LOSS 18.39 9
+128 avx2_final_v2_gcc_noxj 3.7 34.2585 0.1784 -20.09 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_mid 4.0 31.6143 0.1772 -30.13 LOSS LOSS A 1.5 LOSS 0.05 9
+128 avx2_mid_u4 4.0 31.6143 0.1803 -30.13 LOSS LOSS B 25.0 LOSS 44.53 9
+128 avx2_mid_pf1 4.0 31.6143 0.1617 -30.13 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_mid_pfnear 4.3 29.4673 0.1657 -39.61 LOSS LOSS A 1.5 LOSS 0.45 9
+128 avx2_mid_nopeel 4.0 31.6143 0.1560 -30.13 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_mid_ntpf 4.0 31.6143 0.1349 -30.13 LOSS LOSS B 25.0 LOSS 44.04 9
+# band 256 = 0.00%
+256 ref_scalar 87.6 2.9215 1.7620 -2258.81 LOSS LOSS A 1.5 LOSS 0.04 9
+256 glibc 3.7 68.9135 0.0637 +0.00 - - A 1.5 - 0.00 9
+256 naive 87.6 2.9215 1.8445 -2258.81 LOSS LOSS B 25.0 LOSS 22.06 9
+256 avx2_final_v2_gcc_noxj 4.3 59.4699 0.0630 -15.88 LOSS LOSS A 1.5 LOSS 0.91 9
+256 avx2_mid 4.0 63.5047 0.0825 -8.52 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_mid_u4 4.0 63.5047 0.0962 -8.52 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_mid_pf1 4.0 63.5047 0.0773 -8.52 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_mid_pfnear 4.3 59.4699 0.0801 -15.88 LOSS LOSS A 1.5 LOSS 0.91 9
+256 avx2_mid_nopeel 4.0 63.5047 0.0660 -8.52 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_mid_ntpf 4.0 63.5047 0.0673 -8.52 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 512 = 0.61%
+512 ref_scalar 167.7 3.0524 1.3516 -2309.67 LOSS LOSS A 1.5 LOSS 0.05 9
+512 glibc 7.0 73.5537 0.0656 +0.00 - - A 1.5 - 0.00 9
+512 naive 168.8 3.0341 1.8081 -2324.26 LOSS LOSS B 25.0 LOSS 24.58 9
+512 avx2_final_v2_gcc_noxj 6.0 85.0018 0.0699 +13.47 WIN WIN A 1.5 WIN 1.30 9
+512 avx2_mid 6.2 82.8519 0.0696 +11.22 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_mid_u4 6.2 82.8519 0.0622 +11.22 WIN WIN B 25.0 measured 54.49 9
+512 avx2_mid_pf1 6.5 78.8639 0.0593 +6.73 WIN WIN B 25.0 measured 47.05 9
+512 avx2_mid_pfnear 6.5 78.8639 0.0592 +6.73 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_mid_nopeel 6.5 78.8639 0.0629 +6.73 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_mid_ntpf 6.3 80.8094 0.0539 +8.98 WIN WIN A 1.5 WIN 0.00 9
+# band 1024 = 0.29%
+1024 ref_scalar 328.0 3.1224 1.6012 -2852.03 LOSS LOSS A 1.5 LOSS 0.05 9
+1024 glibc 11.1 92.1742 0.0677 +0.00 - - A 1.5 - 1.41 9
+1024 naive 328.9 3.1135 1.4681 -2860.47 LOSS LOSS B 25.0 LOSS 25.99 9
+1024 avx2_final_v2_gcc_noxj 11.3 90.8962 0.0396 -1.41 measured measured A 1.5 measured 1.39 9
+1024 avx2_mid 11.6 88.4428 0.0497 -4.22 LOSS LOSS A 1.5 LOSS 0.00 9
+1024 avx2_mid_u4 13.9 73.5532 0.0597 -25.32 LOSS LOSS A 1.5 LOSS 0.00 9
+1024 avx2_mid_pf1 11.4 89.6523 0.0623 -2.81 LOSS LOSS B 25.0 measured 67.17 9
+1024 avx2_mid_pfnear 12.0 85.0011 0.0606 -8.44 LOSS LOSS A 1.5 LOSS 1.30 9
+1024 avx2_mid_nopeel 11.0 93.4895 0.0670 +1.41 measured measured A 1.5 measured 0.00 9
+1024 avx2_mid_ntpf 12.2 83.9131 0.0627 -9.84 LOSS LOSS A 1.5 LOSS 3.84 9
+# band 4096 = 0.05%
+4096 ref_scalar 1291.8 3.1709 1.7128 -3026.78 LOSS LOSS A 1.5 LOSS 0.15 9
+4096 glibc 41.3 99.1467 0.0437 +0.00 - - A 1.5 - 1.51 9
+4096 naive 1292.4 3.1694 1.3864 -3028.29 LOSS LOSS B 25.0 LOSS 25.35 9
+4096 avx2_final_v2_gcc_noxj 41.3 99.1467 0.0434 +0.00 measured measured B 25.0 measured 24.21 9
+4096 avx2_mid 41.3 99.1467 0.0439 +0.00 measured measured A 1.5 measured 1.51 9
+4096 avx2_mid_u4 54.4 75.2423 0.0498 -31.77 LOSS LOSS A 1.5 LOSS 0.00 9
+4096 avx2_mid_pf1 41.9 97.6692 0.0453 -1.51 LOSS LOSS B 25.0 measured 25.34 9
+4096 avx2_mid_pfnear 41.9 97.6692 0.0453 -1.51 LOSS LOSS A 1.5 LOSS 0.00 9
+4096 avx2_mid_nopeel 41.3 99.1467 0.0477 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_mid_ntpf 42.6 96.2349 0.0440 -3.03 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 16384 = 0.27%
+16384 ref_scalar 6527.2 2.5101 1.6030 -3004.52 LOSS LOSS A 1.5 LOSS 2.80 9
+16384 glibc 210.2 77.9263 0.0704 +0.00 - - A 1.5 - 2.38 9
+16384 naive 6545.0 2.5033 1.8007 -3012.96 LOSS LOSS A 1.5 LOSS 3.28 9
+16384 avx2_final_v2_gcc_noxj 213.0 76.9202 0.0523 -1.31 measured measured A 1.5 measured 2.23 9
+16384 avx2_mid 200.2 81.8177 0.0636 +4.76 WIN WIN B 25.0 measured 62.55 9
+16384 avx2_mid_u4 242.8 67.4933 0.0675 -15.46 LOSS LOSS A 1.5 LOSS 1.13 9
+16384 avx2_mid_pf1 202.8 80.8089 0.0564 +3.57 WIN WIN A 1.5 WIN 1.36 9
+16384 avx2_mid_pfnear 200.5 81.7157 0.0511 +4.64 WIN WIN B 25.0 measured 58.60 9
+16384 avx2_mid_nopeel 202.8 80.8089 0.0692 +3.57 WIN WIN B 25.0 measured 58.08 9
+16384 avx2_mid_ntpf 200.2 81.8177 0.0695 +4.76 WIN WIN B 25.0 measured 61.42 9
+# band 65536 = 0.04%
+65536 ref_scalar 25758.0 2.5443 1.5620 -1955.71 LOSS LOSS A 1.5 LOSS 4.28 9
+65536 glibc 1253.0 52.3033 0.0751 +0.00 - - A 1.5 - 2.31 9
+65536 naive 25768.0 2.5433 1.5853 -1956.50 LOSS LOSS A 1.5 LOSS 4.90 9
+65536 avx2_final_v2_gcc_noxj 1252.0 52.3450 0.0770 +0.08 measured measured A 1.5 measured 0.80 9
+65536 avx2_mid 1262.0 51.9303 0.0705 -0.72 measured measured A 1.5 measured 1.66 9
+65536 avx2_mid_u4 1253.0 52.3033 0.0747 +0.00 measured measured A 1.5 measured 0.72 9
+65536 avx2_mid_pf1 1252.0 52.3450 0.0701 +0.08 measured measured A 1.5 measured 0.88 9
+65536 avx2_mid_pfnear 1252.0 52.3450 0.0717 +0.08 measured measured A 1.5 measured 0.80 9
+65536 avx2_mid_nopeel 1253.0 52.3033 0.0706 +0.00 measured measured A 1.5 measured 0.72 9
+65536 avx2_mid_ntpf 1262.0 51.9303 0.0698 -0.72 measured measured A 1.5 measured 0.00 9
+# band 262144 = 0.71%
+262144 ref_scalar 104916.0 2.4986 1.6843 -1860.68 LOSS LOSS A 1.5 LOSS 4.57 9
+262144 glibc 5351.0 48.9897 0.0806 +0.00 - - A 1.5 - 8.60 9
+262144 naive 104175.0 2.5164 1.7393 -1846.83 LOSS LOSS A 1.5 LOSS 5.11 9
+262144 avx2_final_v2_gcc_noxj 5270.0 49.7427 0.0790 +1.51 WIN WIN B 25.0 measured 11.02 9
+262144 avx2_mid 5250.0 49.9322 0.0881 +1.89 WIN WIN A 1.5 WIN 3.24 9
+262144 avx2_mid_u4 5270.0 49.7427 0.0775 +1.51 WIN WIN B 25.0 measured 11.78 9
+262144 avx2_mid_pf1 5259.0 49.8467 0.0790 +1.72 WIN WIN A 1.5 WIN 1.73 9
+262144 avx2_mid_pfnear 5300.0 49.4611 0.0789 +0.95 measured measured A 1.5 measured 9.45 9
+262144 avx2_mid_nopeel 5280.0 49.6485 0.0811 +1.33 measured measured A 1.5 measured 2.65 9
+262144 avx2_mid_ntpf 8366.0 31.3344 0.1980 -56.34 LOSS LOSS B 25.0 LOSS 28.02 9
+# band 1048576 = 0.13%
+1048576 ref_scalar 436929.0 2.3999 1.7295 -1585.81 LOSS LOSS A 1.5 LOSS 0.31 9
+1048576 glibc 25918.0 40.4574 0.0907 +0.00 - - A 1.5 - 4.25 9
+1048576 naive 436358.0 2.4030 1.6447 -1583.61 LOSS LOSS A 1.5 LOSS 0.67 9
+1048576 avx2_final_v2_gcc_noxj 23634.0 44.3673 0.0925 +8.81 WIN WIN B 25.0 measured 16.62 9
+1048576 avx2_mid 24316.0 43.1229 0.0938 +6.18 WIN WIN A 1.5 WIN 8.90 9
+1048576 avx2_mid_u4 23113.0 45.3674 0.0908 +10.82 WIN WIN B 25.0 measured 17.60 9
+1048576 avx2_mid_pf1 24216.0 43.3010 0.0943 +6.57 WIN WIN B 25.0 measured 11.42 9
+1048576 avx2_mid_pfnear 23724.0 44.1990 0.0931 +8.47 WIN WIN A 1.5 WIN 8.07 9
+1048576 avx2_mid_nopeel 23785.0 44.0856 0.0923 +8.23 WIN WIN B 25.0 measured 14.62 9
+1048576 avx2_mid_ntpf 56726.0 18.4849 0.2331 -118.87 LOSS LOSS A 1.5 LOSS 6.04 9
+# band 4194304 = 0.48%
+4194304 ref_scalar 1810764.0 2.3163 1.6055 -1281.37 LOSS LOSS B 25.0 LOSS 10.10 9
+4194304 glibc 131085.0 31.9968 0.1545 +0.00 - - B 25.0 - 17.31 9
+4194304 naive 1802008.0 2.3276 1.4682 -1274.69 LOSS LOSS B 25.0 LOSS 13.99 9
+4194304 avx2_final_v2_gcc_noxj 129683.0 32.3427 0.1388 +1.07 measured measured B 25.0 measured 24.72 9
+4194304 avx2_mid 127078.0 33.0057 0.1289 +3.06 WIN WIN B 25.0 measured 32.64 9
+4194304 avx2_mid_u4 135354.0 30.9877 0.1488 -3.26 LOSS LOSS B 25.0 measured 16.89 9
+4194304 avx2_mid_pf1 125806.0 33.3395 0.1266 +4.03 WIN WIN B 25.0 measured 23.91 9
+4194304 avx2_mid_pfnear 130244.0 32.2034 0.1362 +0.64 measured measured B 25.0 measured 15.55 9
+4194304 avx2_mid_nopeel 127129.0 32.9925 0.1248 +3.02 WIN WIN B 25.0 measured 26.87 9
+4194304 avx2_mid_ntpf 252394.0 16.6181 0.2332 -92.54 LOSS LOSS B 25.0 LOSS 11.71 9

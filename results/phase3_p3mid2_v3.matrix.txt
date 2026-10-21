@@ -1,0 +1,107 @@
+# log=results/phase2_6_p3mid2_v3.windows.log  baseline=glibc  op=memcpy  windows=9  rep_lines=4095  migrated_dropped=0
+# null band = |naive vs ref_scalar| in THESE windows (same byte loop, identical instruction streams)
+# columns: size impl min_of_mins_ns gbps cpb delta_vs_glibc_pct rule3 band tier floor tier_verdict spread_pct windows
+# band 16 = 0.00%
+16 ref_scalar 6.6 2.4374 1.6716 -163.20 LOSS LOSS A 1.5 LOSS 0.00 9
+16 glibc 2.5 6.4151 0.7157 +0.00 - - A 1.5 - 0.00 9
+16 naive 6.6 2.4374 1.9244 -163.20 LOSS LOSS A 1.5 LOSS 0.00 9
+16 avx2_final_v2_gcc_noxj 1.6 10.2848 0.4227 +37.62 WIN WIN A 1.5 WIN 0.00 9
+16 avx2_mid 2.5 6.4151 0.6131 +0.00 measured measured A 1.5 measured 0.00 9
+16 avx2_mid_pm 2.2 7.3341 0.6562 +12.53 WIN WIN A 1.5 WIN 0.00 9
+16 avx2_mid_u4pf1 2.5 6.4402 0.5395 +0.39 measured measured A 1.5 measured 0.39 9
+# band 32 = 0.08%
+32 ref_scalar 12.2 2.6229 1.7529 -389.16 LOSS LOSS A 1.5 LOSS 0.41 9
+32 glibc 2.5 12.8303 0.3991 +0.00 - - A 1.5 - 0.00 9
+32 naive 12.2 2.6208 1.5719 -389.56 LOSS LOSS A 1.5 LOSS 0.40 9
+32 avx2_final_v2_gcc_noxj 2.2 14.7336 0.2565 +12.92 WIN WIN A 1.5 WIN 0.45 9
+32 avx2_mid 2.5 12.8303 0.3251 +0.00 measured measured A 1.5 measured 0.00 9
+32 avx2_mid_pm 2.8 11.3976 0.4071 -12.57 LOSS LOSS A 1.5 LOSS 0.00 9
+32 avx2_mid_u4pf1 3.1 10.2851 0.3665 -24.75 LOSS LOSS A 1.5 LOSS 0.31 9
+# band 64 = 0.05%
+64 ref_scalar 22.2 2.8791 1.7180 -791.28 LOSS LOSS B 25.0 LOSS 13.91 9
+64 glibc 2.5 25.6606 0.1704 +0.00 - - A 1.5 - 0.00 9
+64 naive 22.2 2.8804 1.6963 -790.85 LOSS LOSS B 25.0 LOSS 13.83 9
+64 avx2_final_v2_gcc_noxj 2.2 29.4673 0.1414 +12.92 WIN WIN A 1.5 WIN 0.00 9
+64 avx2_mid 2.5 25.6606 0.1475 +0.00 measured measured A 1.5 measured 0.00 9
+64 avx2_mid_pm 2.8 22.7953 0.1921 -12.57 LOSS LOSS A 1.5 LOSS 0.00 9
+64 avx2_mid_u4pf1 3.1 20.5702 0.1914 -24.75 LOSS LOSS A 1.5 LOSS 0.31 9
+# band 128 = 0.00%
+128 ref_scalar 47.6 2.6909 1.5112 -1428.89 LOSS LOSS A 1.5 LOSS 0.00 9
+128 glibc 3.1 41.1404 0.0992 +0.00 - - A 1.5 - 0.00 9
+128 naive 47.6 2.6909 2.1619 -1428.89 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_final_v2_gcc_noxj 3.7 34.2585 0.1138 -20.09 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_mid 4.0 31.6143 0.1518 -30.13 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_mid_pm 4.0 31.6143 0.1320 -30.13 LOSS LOSS A 1.5 LOSS 0.00 9
+128 avx2_mid_u4pf1 4.0 31.6143 0.1661 -30.13 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 256 = 0.00%
+256 ref_scalar 87.6 2.9215 1.5893 -2258.81 LOSS LOSS A 1.5 LOSS 0.00 9
+256 glibc 3.7 68.9135 0.0754 +0.00 - - B 25.0 - 26.39 9
+256 naive 87.6 2.9215 1.6696 -2258.81 LOSS LOSS A 1.5 LOSS 0.00 9
+256 avx2_final_v2_gcc_noxj 4.3 59.4699 0.0716 -15.88 LOSS LOSS B 25.0 measured 11.80 9
+256 avx2_mid 4.0 63.5047 0.0762 -8.52 LOSS LOSS B 25.0 measured 17.44 9
+256 avx2_mid_pm 4.0 63.5047 0.0636 -8.52 LOSS LOSS B 25.0 measured 17.44 9
+256 avx2_mid_u4pf1 4.0 63.5047 0.0660 -8.52 LOSS LOSS B 25.0 measured 18.41 9
+# band 512 = 0.00%
+512 ref_scalar 167.7 3.0524 1.5157 -2309.67 LOSS LOSS A 1.5 LOSS 0.00 9
+512 glibc 7.0 73.5537 0.0688 +0.00 - - A 1.5 - 0.00 9
+512 naive 167.7 3.0524 1.6366 -2309.67 LOSS LOSS A 1.5 LOSS 0.00 9
+512 avx2_final_v2_gcc_noxj 5.9 86.1184 0.0544 +14.59 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_mid 6.2 82.8519 0.0492 +11.22 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_mid_pm 6.3 80.8094 0.0621 +8.98 WIN WIN A 1.5 WIN 0.00 9
+512 avx2_mid_u4pf1 6.5 78.8639 0.0598 +6.73 WIN WIN A 1.5 WIN 4.81 9
+# band 1024 = 0.00%
+1024 ref_scalar 328.0 3.1224 1.3992 -2852.03 LOSS LOSS A 1.5 LOSS 0.00 9
+1024 glibc 11.1 92.1742 0.0590 +0.00 - - A 1.5 - 0.00 9
+1024 naive 328.0 3.1224 1.5024 -2852.03 LOSS LOSS A 1.5 LOSS 0.00 9
+1024 avx2_final_v2_gcc_noxj 11.1 92.1742 0.0467 +0.00 measured measured A 1.5 measured 0.00 9
+1024 avx2_mid 11.4 89.6523 0.0561 -2.81 LOSS LOSS A 1.5 LOSS 1.37 9
+1024 avx2_mid_pm 11.3 90.8962 0.0528 -1.41 measured measured A 1.5 measured 0.00 9
+1024 avx2_mid_u4pf1 12.7 80.8087 0.0601 -14.06 LOSS LOSS A 1.5 LOSS 0.00 9
+# band 4096 = 0.00%
+4096 ref_scalar 1291.8 3.1709 1.3763 -3026.78 LOSS LOSS B 25.0 LOSS 25.21 9
+4096 glibc 41.3 99.1467 0.0431 +0.00 - - A 1.5 - 0.00 9
+4096 naive 1291.8 3.1707 1.4765 -3026.93 LOSS LOSS B 25.0 LOSS 26.42 9
+4096 avx2_final_v2_gcc_noxj 41.3 99.1467 0.0420 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_mid 41.3 99.1467 0.0460 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_mid_pm 41.3 99.1467 0.0453 +0.00 measured measured A 1.5 measured 0.00 9
+4096 avx2_mid_u4pf1 49.4 82.8521 0.0459 -19.67 LOSS LOSS A 1.5 LOSS 1.26 9
+# band 16384 = 0.08%
+16384 ref_scalar 6537.5 2.5062 1.6708 -3009.39 LOSS LOSS A 1.5 LOSS 3.37 9
+16384 glibc 210.2 77.9263 0.0731 +0.00 - - A 1.5 - 1.31 9
+16384 naive 6532.2 2.5082 1.5684 -3006.90 LOSS LOSS A 1.5 LOSS 3.52 9
+16384 avx2_final_v2_gcc_noxj 212.8 77.0106 0.0667 -1.19 measured measured A 1.5 measured 1.29 9
+16384 avx2_mid 195.2 83.9129 0.0556 +7.13 WIN WIN A 1.5 WIN 2.56 9
+16384 avx2_mid_pm 193.0 84.8912 0.0645 +8.20 WIN WIN A 1.5 WIN 2.59 9
+16384 avx2_mid_u4pf1 235.2 69.6451 0.0607 -11.89 LOSS LOSS A 1.5 LOSS 2.13 9
+# band 65536 = 0.08%
+65536 ref_scalar 25808.0 2.5394 1.5090 -1961.34 LOSS LOSS A 1.5 LOSS 3.50 9
+65536 glibc 1252.0 52.3450 0.0701 +0.00 - - A 1.5 - 0.80 9
+65536 naive 25828.0 2.5374 1.6084 -1962.94 LOSS LOSS A 1.5 LOSS 4.00 9
+65536 avx2_final_v2_gcc_noxj 1252.0 52.3450 0.0695 +0.00 measured measured A 1.5 measured 0.80 9
+65536 avx2_mid 1262.0 51.9303 0.0798 -0.80 measured measured A 1.5 measured 0.00 9
+65536 avx2_mid_pm 1253.0 52.3033 0.0678 -0.08 measured measured A 1.5 measured 0.72 9
+65536 avx2_mid_u4pf1 1262.0 51.9303 0.0739 -0.80 measured measured A 1.5 measured 0.00 9
+# band 262144 = 1.29%
+262144 ref_scalar 106309.0 2.4659 1.5743 -1886.71 LOSS LOSS A 1.5 LOSS 2.98 9
+262144 glibc 5351.0 48.9897 0.0788 +0.00 - - A 1.5 - 9.34 9
+262144 naive 104937.0 2.4981 1.6484 -1861.07 LOSS LOSS A 1.5 LOSS 4.31 9
+262144 avx2_final_v2_gcc_noxj 5290.0 49.5546 0.0809 +1.14 measured measured B 25.0 measured 11.55 9
+262144 avx2_mid 5260.0 49.8373 0.0795 +1.70 WIN WIN A 1.5 WIN 1.90 9
+262144 avx2_mid_pm 5270.0 49.7427 0.0793 +1.51 WIN WIN A 1.5 WIN 1.52 9
+262144 avx2_mid_u4pf1 5250.0 49.9322 0.0802 +1.89 WIN WIN A 1.5 WIN 3.43 9
+# band 1048576 = 0.01%
+1048576 ref_scalar 436950.0 2.3998 1.6631 -1569.72 LOSS LOSS A 1.5 LOSS 0.35 9
+1048576 glibc 26169.0 40.0694 0.0922 +0.00 - - A 1.5 - 3.68 9
+1048576 naive 436899.0 2.4000 1.4755 -1569.53 LOSS LOSS A 1.5 LOSS 5.02 9
+1048576 avx2_final_v2_gcc_noxj 23645.0 44.3466 0.0932 +9.64 WIN WIN B 25.0 measured 17.67 9
+1048576 avx2_mid 24226.0 43.2831 0.0924 +7.42 WIN WIN A 1.5 WIN 9.68 9
+1048576 avx2_mid_pm 24386.0 42.9991 0.0924 +6.81 WIN WIN A 1.5 WIN 9.82 9
+1048576 avx2_mid_u4pf1 23634.0 44.3673 0.0939 +9.69 WIN WIN B 25.0 measured 16.11 9
+# band 4194304 = 0.64%
+4194304 ref_scalar 1783764.0 2.3514 1.4474 -1268.92 LOSS LOSS B 25.0 LOSS 10.52 9
+4194304 glibc 130304.0 32.1886 0.1473 +0.00 - - B 25.0 - 17.05 9
+4194304 naive 1795125.0 2.3365 1.5228 -1277.64 LOSS LOSS A 1.5 LOSS 8.27 9
+4194304 avx2_final_v2_gcc_noxj 128882.0 32.5438 0.1336 +1.09 measured measured B 25.0 measured 14.93 9
+4194304 avx2_mid 130164.0 32.2232 0.1279 +0.11 measured measured B 25.0 measured 16.29 9
+4194304 avx2_mid_pm 128521.0 32.6352 0.1302 +1.37 measured measured B 25.0 measured 34.38 9
+4194304 avx2_mid_u4pf1 127259.0 32.9588 0.1718 +2.34 WIN WIN B 25.0 measured 25.26 9
