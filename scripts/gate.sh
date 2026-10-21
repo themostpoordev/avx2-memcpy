@@ -67,6 +67,8 @@ declared_bits() {
         sse2.c|memset_sse2.c)                             echo 128 ;;
         # rung 4, the NT rung, and both shipped kernels: 32 B AVX2 moves
         avx2.c|avx2_nt.c|fast.c|mid.c)                    echo 256 ;;
+        # Phase 7 rungs: the F4 shape, so also 32 B AVX2 moves
+        avx2_f4win64.c|avx2_f4win129.c)                   echo 256 ;;
         memset_avx2.c|memset_avx2_nt.c)                   echo 256 ;;
         # hand-written asm rungs: 32 B moves
         asm.S|memset_asm.S)                               echo 256 ;;

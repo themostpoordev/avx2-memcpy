@@ -119,6 +119,28 @@
 #define TUNED_WINDOW 0
 #endif
 
+/* Optional (Phase 7, rung-only): the window's LOWER edge. 128 is the shipped
+ * value. 129 moves the edge up by one size, so n = 128 falls through to the
+ * flat class chain and reaches the (64, 128] class's H = 64 block pair through
+ * four extra compares. That is the H1a CONTROL rung; see
+ * src/rungs/avx2_f4win129.c. It exists to price the compares, and it is never
+ * a promotion candidate. */
+#ifndef TUNED_WIN_LO
+#define TUNED_WIN_LO 128
+#endif
+
+/* Optional (Phase 7, rung-only): inside the window, give n == 128 the H = 64
+ * block pair, which tiles that size exactly (4 loads + 4 stores) instead of
+ * the H = 128 pair, whose head and tail blocks are the same four blocks at
+ * n = 128 (8 loads + 8 stores for a 128 B copy).
+ *
+ * Default 0: the shipped kernel is unchanged, and the shipped object's .text
+ * md5 is unchanged with it. See src/rungs/avx2_f4win64.c for the measurement
+ * and for the acceptance criteria that were fixed before the measurement ran. */
+#ifndef TUNED_WIN64
+#define TUNED_WIN64 0
+#endif
+
 #if TUNED_EXPECT
 #define T_UNLIKELY(c) (UNLIKELY(c))
 #define T_LIKELY(c)   (LIKELY(c))
@@ -212,7 +234,17 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
 
 #if TUNED_WINDOW
     /* ---- F4: 128..256 B, one compare, then no branches at all ------------ */
-    if ((size_t)(n - 128) <= 128u) {
+    if ((size_t)(n - (size_t)TUNED_WIN_LO) <= (size_t)(256u - (size_t)TUNED_WIN_LO)) {
+#if TUNED_WIN64
+        /* Phase 7 rung H1b: at n == 128 the H = 128 block pair's head and tail
+         * are the same four 32 B blocks, so the copy would issue 8 loads and
+         * 8 stores for 128 bytes. The H = 64 pair tiles n = 128 exactly:
+         * [0,64) + [n-64,n) = [0,128), 4 loads and 4 stores, no overlap. */
+        if (n == 128u) {
+            T_BLOCKPAIR(2);
+            return dst;
+        }
+#endif
         T_BLOCKPAIR(4);
         return dst;
     }

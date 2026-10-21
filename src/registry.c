@@ -43,6 +43,16 @@ const impl_t g_impls[] = {
       "opt-in 1 KiB-64 KiB kernel: 256 B/iteration, three prefetch streams, head "
       "peel gated at 4 KiB. Certifies +6-7% at 16 KiB; NOT part of the fast path" },
 
+    /* ---- Phase 7 rungs: the F4 shape with one knob changed ----------------- */
+    { "f4win64", memcpy_avx2_f4win64, NULL,
+      "Phase 7 H1b: F4 with an explicit H=64 case at n=128 inside the window. "
+      "PRIMARY CANDIDATE - acceptance test in src/rungs/avx2_f4win64.c" },
+
+    { "f4win129", memcpy_avx2_f4win129, NULL,
+      "Phase 7 H1a CONTROL: F4 with the window's lower edge at 129, so n=128 "
+      "falls through to the class chain. Never promotable - see "
+      "src/rungs/avx2_f4win64.c" },
+
     /* ---- the ladder (src/rungs/) ---------------------------------------- */
     { "naive", memcpy_naive, NULL,
       "rung 1: byte-by-byte loop, 1 B load + 1 B store per byte" },

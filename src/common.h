@@ -44,6 +44,14 @@ void *memcpy_avx2_nt(void *dst, const void *src, size_t n); /* rung 5: NT stores
 void *memcpy_asm(void *dst, const void *src, size_t n);     /* rung 6: hand-written */
 void *memcpy_rep(void *dst, const void *src, size_t n);     /* rung 7: rep movsb    */
 
+/* ---- Phase 7 rungs: the F4 shape, one knob changed each ------------------- */
+/* Both are built from src/fast_impl.h with the deliverable's own knobs, so
+ * they differ from the shipped kernel in exactly one knob and nothing else.
+ * Neither is a candidate for promotion without a fresh certification
+ * campaign; see each file's header for its acceptance test. */
+void *memcpy_avx2_f4win64(void *dst, const void *src, size_t n);  /* H1b: H=64 at n=128 */
+void *memcpy_avx2_f4win129(void *dst, const void *src, size_t n); /* H1a control: no window at 128 */
+
 /* ---- the matching memset ladder ------------------------------------------ */
 void *memset_naive(void *dst, int c, size_t n);
 void *memset_word(void *dst, int c, size_t n);

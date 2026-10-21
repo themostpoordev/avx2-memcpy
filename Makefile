@@ -69,7 +69,7 @@ SRCS      := $(wildcard src/*.c) $(wildcard src/rungs/*.c) $(wildcard bench/*.c)
 ASM_SRCS  := $(wildcard src/rungs/*.S)
 SRC_OBJ   := $(patsubst %.c,%.o,$(SRCS)) $(patsubst %.S,%.o,$(ASM_SRCS))
 
-GCC_SRCS  := src/fast.c src/mid.c
+GCC_SRCS  := src/fast.c src/mid.c src/rungs/avx2_f4win64.c src/rungs/avx2_f4win129.c
 
 # The library half of the build, without the harness's main(). route_check links
 # this, because it has its own main() and never touches a clock.
@@ -80,6 +80,11 @@ LIB_OBJ    = $(addprefix build/$(EXP_T)/,$(patsubst %.c,%.o,$(LIB_SRCS)) \
 BENCH_OBJ  = $(addprefix build/$(EXP_T)/,bench/bench.o bench/pmu.o)
 GCC_EXTRA_fast.c := -fno-crossjumping
 GCC_EXTRA_mid.c  := -fno-crossjumping
+# The Phase 7 rungs are the F4 shape with one knob changed, so they must be
+# compiled by the same compiler with the same flags as the kernel they are
+# compared against, or the comparison measures the compiler and not the knob.
+GCC_EXTRA_avx2_f4win64.c  := -fno-crossjumping
+GCC_EXTRA_avx2_f4win129.c := -fno-crossjumping
 
 BINS := $(addprefix bench/bench_,$(TARGETS))
 EXP_T := znver2
