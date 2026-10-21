@@ -59,8 +59,15 @@ the experiment would have two variables.
 5 distances x 1 coverage x 1 placement first, then coverage and placement around
 the best distance (512 B), plus a replace-mode cell. 10 real cells + control.
 
-Delta vs the base kernel at the focus sizes, `znver2 / znver3 / v3` (%), floor
-1.5 % unless the size's null band is wider (it is not, at these sizes):
+Delta vs the base kernel at the focus sizes, `znver2 / znver3 / v3` (%). The
+claim floor is 1.5 % unless that size's null band - the same byte loop compiled
+in two TUs, measured in these same windows - is wider. In campaign 2 the bands
+were 0.0-0.9 % at 4, 16 and 64 KiB, 0.7/5.4/2.1 % at 256 KiB and 0.1/1.7/0.0 % at
+1 MiB; in campaign 1 they were 20.1 % (znver2, 4 KiB), 20.4 % (znver3, 256 KiB)
+and 5.1 % (v3, 1 MiB). Where the band exceeds 1.5 % it *is* the floor, which can
+only make a win harder, never easier - the null cells are reported as measured,
+not as wins. Rows A1-A5 are campaign 1; the A4 B/P rows and the replace cell are
+campaign 2, where the control was measured again.
 
 | cell | 4 KiB | 16 KiB | 64 KiB | 256 KiB | 1 MiB |
 |---|---|---|---|---|---|
@@ -94,8 +101,10 @@ floor do so on one target each, and are level or negative elsewhere:
 - A4/B3 at 1 MiB: +0.50 / **+1.79** / +0.34 — one target again.
 - A4/P2 (after loads) at 1 KiB: −4.16 / +4.16 / +2.81 — sign flips across targets;
   that is noise, not an effect.
-- Every other cell at 4 KiB, 64 KiB, 256 KiB and 1 MiB is inside ±1.5 % on all
-  three targets.
+- Every other cell at 4 KiB, 64 KiB, 256 KiB and 1 MiB sits inside ±1.5 % on all
+  three targets, apart from two boundary cells that are one timer step out:
+  A4/B2 at 4 KiB on v3 (−1.51 %) and A4/P3 at 1 MiB on znver3 (−1.50 %). Both are
+  losses by a hundredth of a percent, which is the instrument, not an effect.
 
 Against glibc (the "big win" condition — >1.5 % at 4 KiB, 256 KiB or 1 MiB):
 
