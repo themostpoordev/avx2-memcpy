@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* bench/pmu.c — perf_event_open(2) group wrapper (our own mini-profiler).
  *
  * Linux perf_event read layout with PERF_FORMAT_GROUP |

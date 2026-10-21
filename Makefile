@@ -1,135 +1,108 @@
 # ---------------------------------------------------------------------------
-# AVX2 memcpy/memset benchmark harness
-# Plain Makefile. clang only. No CMake/meson/autotools. No external runtime.
+# memcpy_fast / memcpy_mid — AVX2 copy kernels for Zen 2, plus the harness that
+# measured them. MIT licensed; see README.md and LICENSE.
 #
-# Three codegen targets are produced so the znver2-vs-znver3-vs-v3 question is
-# a measured deliverable, not an assumption:
-#   bench/bench_znver2   (matches the measured silicon: 2x256b load/cyc,
-#                         1x256b store/cyc  -> Zen2 class)
-#   bench/bench_znver3   (as originally prescribed)
-#   bench/bench_v3       (-march=x86-64-v3 generic baseline)
+# Layout
+#   include/   public API (memcpy_fast.h, memcpy_mid.h)
+#   src/       fast.c, mid.c (gcc-built kernels), ref.c, common.h, registry.c
+#   src/rungs/ the reference ladder used by the benchmark
+#   bench/     harness: CSV output, correctness checks, PMU wrapper
+#   scripts/   gate.sh (width audit), measure.sh, analyze.sh, matrix.sh
+#   experiments/hybrid/  a documented loss, built only by `make experiments`
+#   docs/      RESULTS.md, METHODOLOGY.md, NEGATIVE_RESULTS.md, data/
 #
-# Layout: rungs in src/memcpy/ and src/memset/, harness-level files in src/,
-# tooling in scripts/{campaign,analyze,report,verify,gen,measure}/, evidence in
-# results/{committed,docs}/ (tracked) and results/{live,archive}/ (not tracked).
+# Three codegen targets exist because the tuning target is a measured variable,
+# not an assumption:
+#   znver2  matches the measured silicon (Zen 2 class)
+#   znver3  as originally prescribed
+#   v3      -march=x86-64-v3, generic
 #
-# Usage (top level):
-#   make            build all three binaries (parallel: make -j$(nproc))
-#   make gate       audit + audit-width; mandatory before any benchmark
-#   make bench      alias for all (the binaries ARE the benchmark)
-#   make snapshot   freeze the current CSVs into results/committed/
+# Usage
+#   make                 build all three benchmark binaries (parallel: -j)
+#   make gate            audit + width gate; mandatory before any benchmark
+#   make bench           alias for all
+#   make experiments     build the hybrid-experiment binaries (not default)
+#   make bench/bench_znver2 --list        list implementations
 #   make clean
-# Scoped:
-#   make memcpy / make memset   build one family's rungs, all targets
-#   make campaign NAME=<script> [ARGS='...']   scripts/campaign/<script>.sh
-#   make report   NAME=<script> [ARGS='...']   scripts/report/<script>.sh
-#   make TARGET=znver2 single   one binary only (TARGET in {znver2,znver3,v3})
-# Diagnostics: make perf, make objdump, make plot, make audit, make routecheck,
-#              make ntprobe, make perf6probe
 # ---------------------------------------------------------------------------
 
-CC      := clang
-STD     := -std=c11
-WARN    := -Wall -Wextra -Wno-unused-parameter
-OPT     := -O3 -fomit-frame-pointer
-# We reimplement memcpy/memset; never let the compiler synthesize libc calls
-# or fold our loops into them. This is a correctness-of-measurement flag.
+CC       := clang
+CC_GCC   := gcc
+STD      := -std=c11
+WARN     := -Wall -Wextra -Wno-unused-parameter
+OPT      := -O3 -fomit-frame-pointer
+# We reimplement memcpy/memset; never let the compiler synthesize libc calls or
+# fold our loops into them. This is a correctness-of-measurement flag.
 NOBUILTIN := -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-memmove -fno-builtin-bzero
-INC     := -Isrc -Isrc/memcpy -Ibench
-LDFLAGS := -static -lm
+INC      := -Isrc -Iinclude -Ibench
+LDFLAGS  := -static -lm
 
 FLAGS_znver2 := -march=znver2 -mtune=znver2 -mavx2 -mfma
 FLAGS_znver3 := -march=znver3 -mtune=znver3 -mavx2 -mfma
 FLAGS_v3     := -march=x86-64-v3 -mtune=generic -mavx2 -mfma
 
 TARGETS := znver2 znver3 v3
-
-# Kernels whose loops MUST stay scalar. clang -O3 -march=znver2 turns a byte
-# loop into a 4x32B vmovups loop otherwise, which would make a "naive" baseline
-# silently be an AVX2 kernel and make every comparison meaningless.
-SCALAR_SRCS  := src/ref_scalar.c src/memcpy/memcpy_naive.c src/memcpy/memcpy_word.c \
-                src/memcpy/memcpy_rep.c src/memset/memset_naive.c src/memset/memset_word.c
-SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
-
-# Kernel 3 must really be 128-bit SSE2: the ladder's point is that rung 3 is 16B-wide
-# rung 4 is 32B-wide. With -mavx2 in the target flags, clang's SLP vectorizer
-# merged two adjacent _mm_loadu_si128 intrinsics into ONE 32-byte vmovups, so the
-# "SSE2" rung compiled to ymm registers and was really rung 4. Caught by reading
-# the generated assembly before any timing was taken. Disabling AVX for this TU
-# forces the legacy 128-bit encodings (movdqu) and keeps the ladder monotonic;
-# the AVX2 rung that follows is built with AVX enabled, so rung3-vs-rung4 measures
-# exactly the width step it is supposed to.
-SSE2_SRCS  := src/memcpy/memcpy_sse2.c src/memset/memset_sse2.c
-SSE2_FLAGS := -mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize -fno-vectorize
-
-# Any new src/memcpy/*.c or src/memset/*.c kernel is picked up automatically (no
-# Makefile edit per kernel). src/*.c is what is neither: registry.c, ref_scalar.c.
-MEMCPY_SRCS := $(wildcard src/memcpy/*.c) $(wildcard src/memcpy/*.S)
-MEMSET_SRCS := $(wildcard src/memset/*.c) $(wildcard src/memset/*.S)
-SRCS   := $(wildcard src/*.c) $(wildcard src/memcpy/*.c) $(wildcard src/memset/*.c) $(wildcard bench/*.c)
-SRC_OBJ := $(patsubst %.c,%.o,$(SRCS))
-# Hand-written assembly rungs (src/*.S) are picked up the same way, so a kernel
-# written in asm needs no per-kernel Makefile edit either. Tooling is clang's
-# INTEGRATED assembler in GAS/AT&T syntax: no nasm (not installed, and installing
-# one is not permitted). The capital .S means the file also goes through the C
-# preprocessor, which is what the kernel's comments rely on.
-ASM_SRCS := $(wildcard src/memcpy/*.S) $(wildcard src/memset/*.S)
-ASM_OBJ  := $(patsubst %.S,%.o,$(ASM_SRCS))
-SRC_OBJ  += $(ASM_OBJ)
-BINS   := $(addprefix bench/bench_,$(TARGETS))
-
-TARGET ?= znver2
+TARGET  ?= znver2
 ifeq ($(filter $(TARGET),$(TARGETS)),)
 $(error TARGET must be one of: $(TARGETS))
 endif
 
-.PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot ntprobe routecheck \
-        memcpy memset campaign report \
-        perf6probe perf6gen \
-        $(addprefix ntprobe-,$(TARGETS)) $(addprefix perf6probe-,$(TARGETS)) \
-        $(addprefix perf6gen-,$(TARGETS))
+# Kernels whose loops MUST stay scalar: clang -O3 turns a byte loop into a 4x32B
+# vmovups loop otherwise, which would make the "naive" baseline an AVX2 kernel
+# and every comparison meaningless.
+SCALAR_SRCS := src/ref.c src/rungs/naive.c src/rungs/word.c src/rungs/rep_movsb.c \
+               src/rungs/memset_naive.c src/rungs/memset_word.c
+SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
+
+# The SSE2 rung must really be 128-bit: with -mavx2 in the target flags clang's
+# SLP vectorizer merges two adjacent _mm_loadu_si128 into one 32-byte vmovups,
+# which made rung 3 silently equal rung 4. Disabling AVX for these TUs keeps the
+# ladder monotonic.
+SSE2_SRCS  := src/rungs/sse2.c src/rungs/memset_sse2.c
+SSE2_FLAGS := -mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize -fno-vectorize
+
+# Every shipped source. The two measured kernels are gcc-built on purpose: that
+# is the compiler the certified numbers were produced with, and -fno-crossjumping
+# is part of the measured configuration (see src/fast.c). Everything else is
+# clang.
+SRCS      := $(wildcard src/*.c) $(wildcard src/rungs/*.c) $(wildcard bench/*.c)
+ASM_SRCS  := $(wildcard src/rungs/*.S)
+SRC_OBJ   := $(patsubst %.c,%.o,$(SRCS)) $(patsubst %.S,%.o,$(ASM_SRCS))
+
+GCC_SRCS  := src/fast.c src/mid.c
+
+# The library half of the build, without the harness's main(). route_check links
+# this, because it has its own main() and never touches a clock.
+LIB_SRCS  := $(wildcard src/*.c) $(wildcard src/rungs/*.c)
+# Recursive (=, not :=): EXP_T is defined further down, and these expand at use.
+LIB_OBJ    = $(addprefix build/$(EXP_T)/,$(patsubst %.c,%.o,$(LIB_SRCS)) \
+                                      $(patsubst %.S,%.o,$(ASM_SRCS)))
+BENCH_OBJ  = $(addprefix build/$(EXP_T)/,bench/bench.o bench/pmu.o)
+GCC_EXTRA_fast.c := -fno-crossjumping
+GCC_EXTRA_mid.c  := -fno-crossjumping
+
+BINS := $(addprefix bench/bench_,$(TARGETS))
+EXP_T := znver2
+
+.PHONY: all bench single gate audit audit-width clean list objdump experiments \
+        reference $(addprefix single-,$(TARGETS))
 
 all: $(BINS)
 bench: $(BINS)
 
-# ---- scoped builds --------------------------------------------------------
-# The ladder binaries hold every rung, so `make all` compiles everything by
-# design. These build one family's objects for all three targets, which is what
-# a change confined to one family needs.
-# object paths keep their src/ prefix: build/<t>/src/memcpy/x.o is what the
-# pattern rule build/<t>/%.o: %.c resolves, so the stem must be the source path.
-MEMCPY_OBJ := $(patsubst %.S,%.o,$(patsubst %.c,%.o,$(MEMCPY_SRCS)))
-MEMSET_OBJ := $(patsubst %.S,%.o,$(patsubst %.c,%.o,$(MEMSET_SRCS)))
-memcpy: $(foreach t,$(TARGETS),$(addprefix build/$(t)/,$(MEMCPY_OBJ)))
-	@echo "memcpy: $(words $(MEMCPY_SRCS)) rung source(s) x $(words $(TARGETS)) target(s) built"
-memset: $(foreach t,$(TARGETS),$(addprefix build/$(t)/,$(MEMSET_OBJ)))
-	@echo "memset: $(words $(MEMSET_SRCS)) rung source(s) x $(words $(TARGETS)) target(s) built"
-
-# ---- campaign / report dispatch -------------------------------------------
-# One entry point for the frozen protocol so a campaign cannot be started with a
-# hand-typed command line that differs from the last one.
-campaign:
-	@test -n "$(NAME)" || { echo "usage: make campaign NAME=<script-in-scripts/campaign> [ARGS='...']"; exit 2; }
-	@test -f scripts/campaign/$(NAME).sh || { echo "campaign: no scripts/campaign/$(NAME).sh" >&2; exit 2; }
-	@sh scripts/campaign/$(NAME).sh $(ARGS)
-report:
-	@test -n "$(NAME)" || { echo "usage: make report NAME=<script-in-scripts/report> [ARGS='...']"; exit 2; }
-	@test -f scripts/report/$(NAME).sh || { echo "report: no scripts/report/$(NAME).sh" >&2; exit 2; }
-	@sh scripts/report/$(NAME).sh $(ARGS)
-
 # ---- per-target object + link rules ---------------------------------------
-# build/<t>/<path>.o  from  <path>.c   with the flags of target <t>.
+# build/<t>/<path>.o from <path>.c with the flags of target <t>.
+# NOTE: $$(dir $$@) needs the DOUBLE dollar - a single $ is consumed by make.
 define TARGET_RULES
 build/$(1)/%.o: %.c
 	@mkdir -p $$(dir $$@)
 	$$(CC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
 	  -DTARGET_NAME='"$(1)"' $$(if $$(filter $$<,$$(SCALAR_SRCS)),$$(SCALAR_FLAGS),) \
 	  $$(if $$(filter $$<,$$(SSE2_SRCS)),$$(SSE2_FLAGS),) \
-	  -DROUTING_TARGET_NAME=$(1) -MMD -MP -c $$< -o $$@
+	  -MMD -MP -c $$< -o $$@
 
-# Assembly rung: same per-target -march/-mavx2 flags, so the integrated assembler
-# accepts the AVX2 it is told to use. -std/-fno-builtin are C concepts and are
-# deliberately not passed here.
+# Assembly rungs: same per-target -march/-mavx2 flags; -std/-fno-builtin are C
+# concepts and are deliberately not passed.
 build/$(1)/%.o: %.S
 	@mkdir -p $$(dir $$@)
 	$$(CC) $$(OPT) $$(WARN) $$(FLAGS_$(1)) $$(INC) -c $$< -o $$@
@@ -137,155 +110,34 @@ build/$(1)/%.o: %.S
 bench/bench_$(1): $$(addprefix build/$(1)/,$$(SRC_OBJ))
 	@mkdir -p bench
 	$$(CC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
-	  -DTARGET_NAME='"$(1)"' $$^ $$(LDFLAGS) -o $$@
+	  -DTARGET_NAME='\"$(1)\"' $$^ $$(LDFLAGS) -o $$@
 endef
-
 $(foreach t,$(TARGETS),$(eval $(call TARGET_RULES,$(t))))
 
-# ---- gcc-built rungs (Phase 2.6 V1/V6/V7) ---------------------------------
-# Every other src/*.c is built by clang. Files named src/*_gcc.c (and
-# src/*_gcc_*.c, for flag variants of one gcc rung) are built by gcc instead, via
-# EXPLICIT per-source rules: an explicit rule beats the pattern rule above, so
-# there is no ambiguity about which compiler produced which object. The flags are
-# the same shape as the clang ones - same per-target -march/-mtune/-mavx2/-mfma,
-# same -fno-builtin so neither compiler is allowed to call libc's memcpy for us -
-# so a measured difference between an _gcc rung and its clang twin is the
-# compiler, not the flag set. GCC_EXTRA_<file> adds per-rung flags (V6).
-CC_GCC := gcc
-GCC_SRCS := $(wildcard src/memcpy/*_gcc.c) $(wildcard src/memcpy/*_gcc_*.c)
-
-# ---- V6 per-rung compiler flags -------------------------------------------
-# Each _gcc_<flag> rung is memcpy_avx2_final_gcc.c's source plus exactly one flag,
-# so the measured per-flag delta is the flag. Adopted only if `--verify` and `make
-# gate` still pass with the flag on (a flag that changes the answer is not a
-# speed flag).
-GCC_EXTRA_memcpy_avx2_final_gcc_ofast.c  := -Ofast
-GCC_EXTRA_memcpy_avx2_final_gcc_unroll.c := -funroll-loops
-GCC_EXTRA_memcpy_avx2_final_gcc_noplt.c  := -fno-plt
-# -fomit-frame-pointer is already in OPT for every rung, so the "gain from it"
-# cannot be measured by adding it. This rung forces it OFF instead: if it is
-# slower by X%, the flag is worth X%. (See the source header.)
-GCC_EXTRA_memcpy_avx2_final_gcc_noomit.c := -fno-omit-frame-pointer
-# V9c: V9b's small path costs 256 B one step because gcc cross-jumped the
-# T_BLOCKPAIR(2) and T_BLOCKPAIR(4) heads (see the source header). This rung
-# forbids that one transform and nothing else.
-GCC_EXTRA_memcpy_avx2_final_v2_gcc_noxj.c := -fno-crossjumping
-# F1-F4 (the 128/256 B pass) are all measured against V9c, so they carry its
-# one flag too; their own knob is in the source's TUNED_* set, not here.
-GCC_EXTRA_memcpy_avx2_final_f1_gcc.c      := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_final_f3_gcc.c      := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_final_f4_gcc.c      := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_final_ifunc_gcc.c   := -fno-crossjumping
-# Phase 3 P1: the mid-range rungs are all measured against V9c, so they carry the
-# same one flag. Each of the six differs from its neighbour only in the MID_*
-# knob set in its own source, never in flags.
-GCC_EXTRA_memcpy_avx2_mid_gcc.c           := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_u4_gcc.c        := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_pf1_gcc.c       := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_pfnear_gcc.c    := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_nopeel_gcc.c    := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_ntpf_gcc.c      := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_pm_gcc.c        := -fno-crossjumping
-GCC_EXTRA_memcpy_avx2_mid_u4pf1_gcc.c     := -fno-crossjumping
-
-# NOTE: $$(dir $$@) and the flag variables need the DOUBLE dollar - a single $ is
-# consumed by make, not by the shell (the same trap documented for `snapshot`).
-define GCC_RULE_ONE
+# ---- gcc-built kernels ----------------------------------------------------
+# Explicit per-source rules: an explicit rule beats the pattern rule, so there is
+# no ambiguity about which compiler produced which object.
+define GCC_RULE
 build/$(1)/$(2:.c=.o): $(2)
 	@mkdir -p $$(dir $$@)
 	$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
 	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing $$(GCC_EXTRA_$(notdir $(2))) \
 	  -MMD -MP -c $$< -o $$@
 endef
-
-$(foreach t,$(TARGETS),$(foreach s,$(GCC_SRCS),$(eval $(call GCC_RULE_ONE,$(t),$(s)))))
-
-# ---- Phase 2.6 V6/V7 probe binary: -flto and PGO, one binary ----------------
-# -flto and PGO are whole-TU / link-time properties, so their rungs cannot be
-# rows in the normal bench_<t> binaries: the honest control for either is a
-# binary holding BOTH the variant object and its non-variant twin, so the two are
-# measured interleaved inside one process (protocol rule 4) in the same windows.
-# `make perf6probe-<t>` therefore builds bench/bench_<t>_perf6 out of every normal
-# object, plus build/<t>/src/perf6/{memcpy_avx2_final_lto,memcpy_avx2_final_pgo}.o,
-# plus a registry.o recompiled with -DPERF6_PROBE, which appends exactly two rows
-# (avx2_final_lto, avx2_final_pgo) and nothing else.
-#
-# The two sources live in src/perf6/, not src/, so the normal wildcard build never
-# sees them and `make bench` never depends on profile data existing. They are
-# still width-gated: scripts/verify/audit_width.sh walks src/perf6/*.c too, so "not in
-# the ladder binaries" does not mean "not checked".
-#
-# PGO is two stages and both write the SAME object path on purpose: gcc derives
-# the .gcda name from the object path, so a -fprofile-use object built anywhere
-# else compiles with no profile at all (a warning, not an error - exactly the
-# silent no-op this project keeps getting bitten by). Stage 1 is a workload
-# binary only: an instrumented kernel is slower by construction, so it is never
-# benchmarked. Stage 2 is what enters a claim.
-PERF6_SRCS   := src/perf6/memcpy_avx2_final_lto.c src/perf6/memcpy_avx2_final_pgo.c
-PERF6_LADDER := 16,32,64,128,256,512,1024,4096,16384,65536,262144,1048576,4194304
-
-# NOTE: $$(...) needs the double dollar everywhere below - a single $ is eaten by
-# make, not by the shell (same trap as the ntprobe and snapshot recipes).
-define PERF6_TARGET
-perf6gen-$(1): $(BINS)
-	@mkdir -p build/$(1)/src/perf6 build/$(1)/probe results/live results/docs/codegen results/docs/analysis results/archive
-	@rm -f build/$(1)/src/perf6/memcpy_avx2_final_pgo.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.gcda
-	@echo "perf6[$(1)] stage 1: instrumented kernel (-fprofile-generate) and profile workload"
-	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
-	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing -fprofile-generate \
-	  -c src/perf6/memcpy_avx2_final_pgo.c -o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o
-	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
-	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing -flto \
-	  -c src/perf6/memcpy_avx2_final_lto.c -o build/$(1)/src/perf6/memcpy_avx2_final_lto.o
-	@$$(CC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
-	  -DTARGET_NAME='"$(1)"' -DROUTING_TARGET_NAME=$(1) -DPERF6_PROBE \
-	  -c src/registry.c -o build/$(1)/probe/registry.o
-	@$$(CC_GCC) $$(OPT) $$(WARN) $$(FLAGS_$(1)) \
-	  $$(filter-out build/$(1)/src/registry.o,$$(addprefix build/$(1)/,$$(SRC_OBJ))) \
-	  build/$(1)/probe/registry.o \
-	  build/$(1)/src/perf6/memcpy_avx2_final_lto.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o \
-	  $$(LDFLAGS) -fprofile-generate -o bench/bench_$(1)_perf6gen
-	@taskset -c 2 ./bench/bench_$(1)_perf6gen --impl avx2_final_pgo \
-	  --sizes $(PERF6_LADDER) --reps 3 --iters 2000 --warmup 2 --budget 0.05 \
-	  > results/live/perf6_$(1)_pgo_workload.log 2>&1 \
-	  || { echo "perf6[$(1)] profile workload FAILED - see results/live/perf6_$(1)_pgo_workload.log" >&2; tail -5 results/live/perf6_$(1)_pgo_workload.log >&2; exit 1; }
-	@test -f build/$(1)/src/perf6/memcpy_avx2_final_pgo.gcda \
-	  || { echo "perf6[$(1)] FAILED: no .gcda was written, so stage 2 would compile with NO profile" >&2; exit 1; }
-	@echo "perf6[$(1)] stage 1 done: .gcda present, workload log results/live/perf6_$(1)_pgo_workload.log"
-
-perf6probe-$(1): perf6gen-$(1)
-	@echo "perf6[$(1)] stage 2: -fprofile-use kernel + -flto link -> bench/bench_$(1)_perf6"
-	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
-	  -DTARGET_NAME='"$(1)"' -fno-strict-aliasing -fprofile-use \
-	  -c src/perf6/memcpy_avx2_final_pgo.c -o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o
-	@$$(CC_GCC) $$(OPT) $$(WARN) $$(FLAGS_$(1)) -flto \
-	  $$(filter-out build/$(1)/src/registry.o,$$(addprefix build/$(1)/,$$(SRC_OBJ))) \
-	  build/$(1)/probe/registry.o \
-	  build/$(1)/src/perf6/memcpy_avx2_final_lto.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.o \
-	  $$(LDFLAGS) -o bench/bench_$(1)_perf6
-	@echo "built bench/bench_$(1)_perf6 (V6 -flto + V7 PGO rungs beside their non-flagged twins)"
-endef
-$(foreach t,$(TARGETS),$(eval $(call PERF6_TARGET,$(t))))
-perf6probe: $(addprefix perf6probe-,$(TARGETS))
+$(foreach t,$(TARGETS),$(foreach s,$(GCC_SRCS),$(eval $(call GCC_RULE,$(t),$(s)))))
 
 single: bench/bench_$(TARGET)
-
-# ---- disassembly for codegen diffing (directive 4) -------------------------
-objdump: $(BINS)
-	@for t in $(TARGETS); do \
-	  objdump -d --no-show-raw-insn bench/bench_$$t > build/$$t/disasm.txt 2>/dev/null || mkdir -p build/$$t; \
-	  objdump -d --no-show-raw-insn bench/bench_$$t > build/$$t/disasm.txt 2>/dev/null; \
-	  echo "wrote build/$$t/disasm.txt"; \
-	done
+$(addprefix single-,$(TARGETS)): single-%: bench/bench_%
 
 # ---- vectorisation audit ---------------------------------------------------
-# Proves, per target, whether a translation unit contains vector instructions.
-# Files listed in SCALAR_SRCS must report 0 or the build is wrong.
+# Proves per target, per TU, whether the object contains vector instructions.
+# TUs listed in SCALAR_SRCS must report 0 or the build is wrong; any EVEX
+# (AVX-512) encoding is a hard failure because AVX2-only targets would SIGILL.
 audit: $(BINS)
 	@fail=0; SCALAR_SRCS='$(SCALAR_SRCS)'; \
 	for t in $(TARGETS); do \
 	  echo "--- target $$t"; \
-	  for o in $$(ls build/$$t/src/*.o 2>/dev/null); do \
+	  for o in $$(find build/$$t/src -name '*.o' 2>/dev/null | sort); do \
 	    n=$$(objdump -d --no-show-raw-insn $$o | grep -cE '\bv[a-z0-9]+[[:space:]]+\(?%?[xy]mm'); \
 	    rel=$${o#build/*/}; stem=$${rel%.o}; \
 	    src=$$stem.c; [ -f "$$src" ] || src=$$stem.S; \
@@ -304,116 +156,66 @@ audit: $(BINS)
 	done; \
 	exit $$fail
 
-# ---- memory-access width gate (mandatory before any benchmark) ------------
-# `audit` (above) proves the SCALAR_SRCS TUs hold no vector instructions. It
-# cannot see the width of the accesses inside the vector rungs, which is how the
-# same SLP-merge defect passed unnoticed twice (43f01dc: the SSE2 rung compiled to
-# 32-byte ymm; 25faacb: the AVX2 rung's small path did too). This target closes
-# that gap mechanically: for every kernel TU and every target it disassembles the
-# object, finds the widest data-movement access, and fails if it is not the width
-# the rung declares. See scripts/verify/audit_width.sh and scripts/verify/audit_width_allow.txt.
+# Memory-access width gate: every kernel's widest data movement must equal the
+# width its ladder rung declares. See scripts/gate.sh.
 audit-width: $(BINS)
-	@sh scripts/verify/audit_width.sh
+	@sh scripts/gate.sh
 
-# `gate` is what a campaign must pass before it is allowed to produce a timing
-# row: both audits, in one command, with one exit status.
 gate: audit audit-width
 	@echo "gate: audit + audit-width PASSED - benchmarking permitted"
 
-# ---- Kernel 5 threshold probe (diagnostic, not a rung) ---------------------
-# Builds bench/bench_<t>_ntprobe, which is every normal object EXCEPT the
-# committed memcpy_avx2_nt.o, plus that same source compiled with its NT
-# threshold forced low: sweep sizes with NT enabled everywhere above 64 B to test
-# whether a size exists at which NT wins. The Kernel 5 probe found NO winning
-# size on this box (NT loses 69-371% at every size), so the committed rung keeps
-# a fixed EXPERIMENTAL GATE (MEMCPY_AVX2_NT_THRESHOLD, see its source header),
-# NOT a probe-selected crossover. scripts/measure/nt_threshold_probe.sh drives it; the
-# probe binary is never snapshotted and never enters a claim.
-NT_THRESHOLD ?= 64
-# $(FLAGS_$$t) does NOT work here: make looks up a variable literally named
-# "FLAGS_$t" and finds nothing, so the probe object was compiled without -mavx2
-# at first and clang refused the intrinsics. Expanding per target with $(1) at
-# make time is the pattern the normal rules above already use.
-# One rule per target via $(eval), the same pattern the normal target rules use.
-# Two things this cost, both worth recording: $(foreach) directly in a recipe
-# does NOT work (it joins expansions with a space, so the three clang commands
-# ran as one), and shell variables / command substitution inside a define that is
-# passed through $(eval) are expanded twice by make ("objs=..." reached the shell
-# as "bjs=..."), so the object list is computed in make with $(filter-out) and
-# $(addprefix) instead of ls|grep.
-define NTPROBE_TARGET
-ntprobe-$(1): $(BINS)
-	@$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(1)) $(INC) \
-	  -DTARGET_NAME='"$(1)"' -DMEMCPY_AVX2_NT_THRESHOLD=$(NT_THRESHOLD) \
-	  -c src/memcpy_avx2_nt.c -o build/$(1)/src/memcpy_avx2_nt_probe.o
-	@$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(1)) $(INC) \
-	  -DTARGET_NAME='"$(1)"' \
-	  $(filter-out build/$(1)/src/memcpy_avx2_nt.o,$(addprefix build/$(1)/,$(SRC_OBJ))) \
-	  build/$(1)/src/memcpy_avx2_nt_probe.o $(LDFLAGS) -o bench/bench_$(1)_ntprobe
-	@echo "built bench/bench_$(1)_ntprobe (NT threshold forced to $(NT_THRESHOLD) B)"
-endef
-$(foreach t,$(TARGETS),$(eval $(call NTPROBE_TARGET,$(t))))
-ntprobe: $(addprefix ntprobe-,$(TARGETS))
+# ---- reference kernel ------------------------------------------------------
+# V9c, the predecessor of the shipped kernel. Not a rung, not audited, not
+# linked into the benchmark binaries: it exists so its measured numbers stay
+# reproducible. See src/reference/README.md.
+reference: build/reference/fast_v9c.o
 
-# ---- Phase 2.5: hybrid routing-table verification -------------------------
-# Links tools/route_check.c against the built src objects (so it checks the
-# shipped table, not a recompile) and walks every size from 0 to 8 MiB plus each
-# class boundary +-1, comparing the compiled class mapping with the Phase 2.5
-# routing rules and the per-class copies against memcpy_ref. No clock is read.
-routecheck: $(BINS)
-	@sh scripts/verify/hybrid_route_check.sh
+build/reference/%.o: src/reference/%.c
+	@mkdir -p $(dir $@)
+	$(CC_GCC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_znver2) $(INC) \
+	  -fno-strict-aliasing -fno-crossjumping -MMD -MP -c $< -o $@
 
-# ---- committed CSV snapshots (frozen record of finalized kernels) ----------
-# results/live/*.csv is gitignored (rewritten every run). A kernel that has passed
-# verify and completed its benchmark is copied into results/committed/, which IS
-# tracked. A snapshot that already exists is FROZEN: this target refuses to
-# overwrite one that differs from the current run, because a record that
-# silently changes is not a record. Same data re-copied is a no-op.
-SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt asm hybrid
-# NOTE on the quoting below - both of these were bugs in the first version:
-#   * `$${impl}_$${t}` needs the BRACES. `$impl_$t` parses as the variable
-#     `impl_` (underscore is an identifier character) followed by `$t`, so every
-#     path became results/phase2_znver2.csv and the target copied 0 files.
-#   * `$$n`, `$$refused` and `$$((...))` need the DOUBLE dollar: a single `$` is
-#     consumed by make, not by the shell, so `$n` expanded to empty and the
-#     arithmetic was eaten as a make variable reference.
-snapshot: $(BINS)
-	@for f in results/live/phase2_*.csv; do \
-	  [ -f "$$f" ] || continue; \
-	  case "$$f" in *.median_based.csv) continue ;; esac; \
-	  impl=$$(basename "$$f" .csv | cut -d_ -f2); \
-	  case " $(SNAPSHOT_IMPLS) " in \
-	    *" $$impl "*) ;; \
-	    *) echo "  WARNING: $$f not in SNAPSHOT_IMPLS ($$impl); NOT snapshotted" ;; \
-	  esac; \
+# ---- documented-loss experiment: the hybrid dispatcher ---------------------
+# Built only on request. `make gate` does not audit it: it is not a shipped rung,
+# and its whole point is that the dispatch layer loses. See experiments/README.md.
+# EXP_T selects which target's routing table is compiled in; the header carries
+# all three. `make experiments EXP_T=znver3` builds the other one.
+experiments: experiments/hybrid/route_check experiments/hybrid/bench_hybrid
+
+build/$(EXP_T)/experiments/hybrid/%.o: experiments/hybrid/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(EXP_T)) $(INC) \
+	  -Iexperiments/hybrid -DTARGET_NAME='"$(EXP_T)"' \
+	  -DROUTING_TARGET_NAME=$(EXP_T) -MMD -MP -c $< -o $@
+
+build/$(EXP_T)/probe/registry_hybrid.o: src/registry.c
+	@mkdir -p $(dir $@)
+	$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(EXP_T)) $(INC) \
+	  -DTARGET_NAME='"$(EXP_T)"' -DHYBRID_PROBE -MMD -MP -c $< -o $@
+
+experiments/hybrid/route_check: build/$(EXP_T)/experiments/hybrid/route_check.o \
+                                build/$(EXP_T)/experiments/hybrid/hybrid.o \
+                                $(LIB_OBJ)
+	$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(EXP_T)) $(INC) $^ $(LDFLAGS) -o $@
+
+experiments/hybrid/bench_hybrid: build/$(EXP_T)/experiments/hybrid/hybrid.o \
+                                 build/$(EXP_T)/probe/registry_hybrid.o \
+                                 $(filter-out build/$(EXP_T)/src/registry.o,$(LIB_OBJ)) \
+                                 $(BENCH_OBJ)
+	$(CC) $(STD) $(OPT) $(WARN) $(NOBUILTIN) $(FLAGS_$(EXP_T)) $(INC) $^ $(LDFLAGS) -o $@
+
+# ---- disassembly for codegen inspection -----------------------------------
+objdump: $(BINS)
+	@for t in $(TARGETS); do \
+	  mkdir -p build/$$t; objdump -d --no-show-raw-insn bench/bench_$$t > build/$$t/disasm.txt; \
+	  echo "wrote build/$$t/disasm.txt"; \
 	done
-	@mkdir -p results/committed; n=0; refused=0; \
-	for impl in $(SNAPSHOT_IMPLS); do \
-	  for t in $(TARGETS); do \
-	    src=results/live/phase2_$${impl}_$${t}.csv; \
-	    dst=results/committed/phase2_$${impl}_$${t}.csv; \
-	    [ -f "$$src" ] || continue; \
-	    if [ -f "$$dst" ] && ! cmp -s "$$src" "$$dst"; then \
-	      echo "  REFUSED  $$dst (frozen file differs from $$src)"; refused=$$((refused+1)); \
-	    else \
-	      cp "$$src" "$$dst"; echo "  snapshot $$dst"; n=$$((n+1)); \
-	    fi; \
-	  done; \
-	done; \
-	echo "snapshot: $$n file(s) in results/committed, $$refused refused (frozen)"; \
-	[ "$$refused" = "0" ] || { echo "snapshot: refusing to finish with frozen files needing review" >&2; exit 1; }
-
-# ---- phase 4 counter validation -------------------------------------------
-perf: $(BINS)
-	./scripts/measure/run_perf.sh
-
-plot:
-	@./scripts/report/plot.sh
 
 list:
 	@./bench/bench_$(TARGET) --list
 
 clean:
-	rm -rf build bench/bench_znver2 bench/bench_znver3 bench/bench_v3
+	rm -rf build bench/bench_znver2 bench/bench_znver3 bench/bench_v3 \
+	       experiments/hybrid/route_check experiments/hybrid/bench_hybrid
 
--include $(wildcard build/*/*/*.d)
+-include $(wildcard build/*/*/*.d build/*/*/*/*.d build/*/*/*/*/*.d build/*/*/*/*/*/*.d)

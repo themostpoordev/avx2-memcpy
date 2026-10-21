@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* bench/harness.h — benchmark harness types and inline timing primitives.
  *
  * The harness measures from *outside* the kernel: kernels live in their own

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* bench/pmu.h — our own perf_event_open(2) wrapper.
  *
  * The `perf` CLI is not installed on this host and no packages may be

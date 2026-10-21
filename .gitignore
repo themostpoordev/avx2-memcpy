@@ -1,40 +1,52 @@
-# ---- build artefacts ----
+# ---- build artefacts -------------------------------------------------------
 *.o
 *.a
+*.d
 build/
 bench/bench
 bench/bench_*
 bench_bench_*
 
-# ---- measurement outputs (evidence stays on disk, not in history) ----
-# results/live/  current run outputs: window logs, CSVs, PGO workload logs
-# results/archive/ superseded campaigns, kept until a later pass proves them
-#                  redundant - moved, never deleted on the first pass
+# ---- editor / tool droppings -----------------------------------------------
+*.tmp
+.DS_Store
+.freebuff/
+
+# ---- measurement output: current runs and superseded campaigns -------------
+# Kept on disk as evidence, never in history: a log a reader cannot re-derive is
+# not a record. The frozen CSVs under docs/data/ are the record.
 results/live/
 results/archive/
 results/*.csv
 results/*.log
 results/*.svg
-*.tmp
 
-# ---- but the FROZEN snapshots of finalized kernels ARE tracked ----
-# (these negations are explicit: committed/ and docs/ are the record, and a
-#  record that is gitignored is not a record)
-!results/committed/
-!results/committed/*.csv
-!results/docs/
-!results/docs/**
+# ---- the VPS working record ------------------------------------------------
+# Phase reports, analysis prints, codegen dumps and the campaign/report/measure
+# scripts that produced them. The public record is docs/, and the frozen CSVs
+# under docs/data/ are what ships from the campaigns.
+results/docs/
+scripts/analyze/
+scripts/campaign/
+scripts/measure/
+scripts/report/
+scripts/verify/
 
-# ---- .recon probe binaries (the .c probe sources ARE committed) ----
-.recon/*.o
-.recon/uarch
-.recon/uarch2
-.recon/perf_probe
-.recon/perf_verify
-.recon/perf_raw
-.recon/perf_raw2
-.recon/whichcpy2
+# ---- kernels that stayed on the VPS ----------------------------------------
+# The public tree is the curated subset (src/fast.c, src/mid.c, src/rungs/).
+# Every other candidate rung, and the perf6 probe TUs, live only on the VPS.
+src/memcpy/
+src/perf6/
+.recon/
 
-# ---- belt and braces: only sources may be tracked from .recon/ ----
-.recon/*
-!.recon/*.c
+# ---- but the frozen record IS tracked --------------------------------------
+# (explicit negations: a record that is gitignored is not a record)
+!docs/data/
+!docs/data/*.csv
+!experiments/hybrid/data/
+!experiments/hybrid/data/*.csv
+
+# ---- the documented-loss experiment ----------------------------------------
+experiments/hybrid/data/live/
+experiments/hybrid/route_check
+experiments/hybrid/bench_hybrid

@@ -1,6 +1,0 @@
-# codegen diff: kernel=word  znver2 vs v3
-# compared: build/znver2/word.asm  vs  build/v3/word.asm
-#           (function-extracted, address-stripped instruction streams from src/memcpy_word.c)
-# znver2: instructions=30  distinct_mnemonics=16  func_bytes=97
-# v3: instructions=30  distinct_mnemonics=16  func_bytes=97
-# verdict: IDENTICAL instruction streams (empty body below is the result, not a failure)

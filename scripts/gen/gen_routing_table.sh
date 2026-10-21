@@ -61,7 +61,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 
-OUT_H=src/routing_table.h
+OUT_H=experiments/hybrid/routing_table.h
 OUT_TXT=results/docs/analysis/phase2_hybrid_routing.txt
 TMP=build/routing
 mkdir -p "$TMP" results

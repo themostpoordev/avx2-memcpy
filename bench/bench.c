@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* bench/bench.c — benchmark harness.
  *
  * Design rules baked in here:
