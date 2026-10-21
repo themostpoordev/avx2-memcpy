@@ -98,3 +98,49 @@ campaign stays the reference for every other size. `docs/RESULTS.md` and
 
 That row stays at its Phase 7.4 value, plainly stated. No re-run, no
 re-rolling, no threshold adjustment.
+
+## Amendment to the quiet-window gate (committed before the retry)
+
+The first gate run failed, and inspecting it against the committed Phase 7.4
+campaign showed the gate's **spread clause is unsatisfiable on this host, even
+in a good window**. The per-rep range of the noise-floor rungs, over the 45
+reps of the committed good campaign:
+
+| size | ref_scalar | naive | the deliverable |
+|---|--:|--:|--:|
+| 16 KiB | 9.56% | 15.04% | 60.05% |
+| 64 KiB | 9.80% | 20.19% | 3.96% |
+| 256 KiB | 23.46% | 13.11% | 16.34% |
+| 1 MiB | 29.61% | 32.70% | 25.29% |
+
+No size and no implementation reaches 2%. The clause therefore measures the
+**per-rep variance of the measurement**, which on this shared host is always
+large, and cannot distinguish a quiet host from a noisy one. It is a
+specification defect, not a host finding.
+
+Two implementation defects were also found in the gate script: the spread
+accidentally included the `memset` rows, and the band was taken over five reps
+rather than over a converged sample.
+
+**The gate is corrected, before the retry, as follows.** The quietness signal
+is the **null band** — `|naive − ref_scalar| / ref_scalar`, the project's own
+definition of the noise floor — measured at the sizes that matter, over enough
+reps for the band to converge (the campaign's 45 reps converge it to 0.04–1.07%;
+the harness caps a single run at 32 reps, so a sample is 30).
+
+* Three consecutive samples, 10 s apart, each a harness run of `naive` and
+  `ref_scalar` at 16 KiB, 64 KiB, 256 KiB and 1 MiB with `--reps 30`.
+* Per sample and per size: `band_i` = |floor(naive) − floor(ref_scalar)| /
+  floor(ref_scalar), the floors taken over that sample's 30 reps.
+* **PASS** requires every `band_i` to be **< 2%** in all three samples, **and**
+  the **across-sample spread** of the band at each size — max − min over the
+  three samples, in percentage points — to be **≤ 2**.
+
+This is the reading the brief's sentence most naturally supports ("3
+consecutive 10 s samples with spread < 2%": the spread *of the samples*), and
+it is satisfiable on a quiet host, as the committed good campaign shows. The
+band threshold itself is unchanged, and the gate can still fail.
+
+The retry rule is unchanged: on failure, wait 5 minutes and retry once; on a
+second failure, **STOP**, report "host not quiet today", reschedule, and do
+not measure.
