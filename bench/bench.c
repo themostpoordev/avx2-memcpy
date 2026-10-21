@@ -42,7 +42,14 @@
 
 #define MAX_SIZE   ((size_t)256 * 1024 * 1024)
 #define MAX_ITERS  4096
-#define MAX_SAMPLES 4096
+/* MAX_SAMPLES caps the per-rep sample count, i.e. the number of timed
+ * batches the rep's min/median/p99 are computed over. It was 4096, which
+ * silently capped --iters at 4096 and made a 40000-iteration run impossible
+ * (Phase 7.2b needs it to tell a real 512 B difference from an estimator
+ * artifact). The STANDARD protocol is unaffected: --iters 4000 < 4096, so
+ * ni is still 4000 and every frozen campaign reproduces bit-for-bit. Only a
+ * run that asks for more than 4096 iterations is affected. */
+#define MAX_SAMPLES 65536
 
 /* ------------------------------------------------------------------ state */
 static volatile uint64_t g_sink;
