@@ -94,15 +94,19 @@
  *   A3  PASS. `make gate` passes, and `--verify` passes for this rung on all
  *       three targets.
  *
- *   The regression is NOT the knob. The 16..64 B code is byte-identical to
- *   the shipped kernel's - the same instructions at the same offsets 0x0..0x34
- *   - so the knob cannot be its cause. What changed is the ALIGNMENT of the
- *   out-of-line 32..64 B branch target: in the shipped kernel that target sits
- *   at 0x1c0, which is 64-byte aligned; in this rung it moved to 0x1a0, which
- *   is only 16-byte aligned, while the n <= 15 path took the 64-byte-aligned
- *   0x180 instead. This is the layout sensitivity the F2/F3 work already
- *   documented ("moving the alignment decision around cost more than it
- *   saved"), and it costs 16% on a 2 ns copy.
+ *   The regression is NOT the knob. On znver2 and znver3 the 16..64 B code is
+ *   byte-identical to the shipped kernel's - the same instructions at the same
+ *   offsets 0x0..0x34 - so the knob cannot be its cause there. (On v3 the
+ *   knob's own codegen differs - 20 instructions with no `lea` in the shipped
+ *   kernel against 21 with `lea` here - so the v3 regression is confounded
+ *   between the knob and the alignment, and is reported as such.) What
+ *   changed is the ALIGNMENT of the out-of-line 32..64 B branch target: in the
+ *   shipped kernel that target sits at 0x1c0, which is 64-byte aligned; in
+ *   this rung it moved to 0x1a0, which is 32-byte aligned but NOT 64-byte
+ *   aligned (0x1a0 = 416 = 6*64 + 32), while the n <= 15 path took the
+ *   64-byte-aligned 0x180 instead. This is the layout sensitivity the F2/F3
+ *   work already documented ("moving the alignment decision around cost more
+ *   than it saved"), and it costs 16% on a 2 ns copy.
  *
  * CONSEQUENCE: this rung is REJECTED and is NOT promoted. The shipped
  *   kernel keeps its 128..256 B window unchanged, and its certified 128 B

@@ -118,15 +118,19 @@ The hypothesis is **confirmed**: giving n = 128 the H = 64 pair is worth
 F4's 3.4 ns). The certified −10.04% loss was caused by the coincident blocks.
 
 **And the primary candidate is still rejected**, because the pre-registered
-regression gate failed. The cause of the regression is *not* the knob: the
-16..64 B code is byte-identical to the shipped kernel's — the same instructions
-at the same offsets `0x0..0x34` — so the knob cannot be responsible. What
-changed is the **alignment of the out-of-line 32..64 B branch target**: in the
-shipped kernel it sits at `0x1c0`, which is 64-byte aligned; in the rung it
-moved to `0x1a0`, which is only 16-byte aligned, while the `n <= 15` path took
-the 64-byte-aligned `0x180` instead. A 16% swing on a 2 ns copy, from
-alignment alone — the same layout sensitivity the F2/F3 work already
-documented ("moving the alignment decision around cost more than it saved").
+regression gate failed. The cause of the regression is *not* the knob: on
+znver2 and znver3 the 16..64 B code is byte-identical to the shipped kernel's —
+the same instructions at the same offsets `0x0..0x34` — so the knob cannot be
+responsible there. (On v3 the knob's own codegen differs — 20 instructions with
+no `lea` in the shipped kernel against 21 with `lea` in both knob builds — so
+the v3 regression is confounded between the knob and the alignment, and is
+reported as such.) What changed is the **alignment of the out-of-line 32..64 B
+branch target**: in the shipped kernel it sits at `0x1c0`, which is 64-byte
+aligned; in the rung it moved to `0x1a0`, which is 32-byte aligned but *not*
+64-byte aligned (`0x1a0` = 416 = 6·64 + 32), while the `n <= 15` path took the
+64-byte-aligned `0x180` instead. A 16% swing on a 2 ns copy, from alignment
+alone — the same layout sensitivity the F2/F3 work already documented
+("moving the alignment decision around cost more than it saved").
 
 **Consequence.** The shipped kernel keeps its 128..256 B window unchanged, and
 its certified 128 B loss stands. Nothing was promoted: promoting would have
@@ -139,6 +143,31 @@ The next experiment, if there is one, is a separate one with its own criteria
 fixed in advance: keep the H = 64 semantics at n = 128 *and* restore the
 64-byte alignment of the 32..64 B branch target, then re-run this same gate.
 That was not attempted here.
+
+## Alignment sensitivity — quantified (Phase 7)
+
+A 32-byte shift in the branch-target alignment of the 32..64 B path — the
+target moving from `0x1c0` (64-byte aligned) to `0x1a0` (32-byte aligned, *not*
+64-byte aligned) — produced **−16.87% at 32 B and 64 B** in an otherwise
+instruction-identical code path. This is the sharpest quantified alignment
+sensitivity in the project. F2/F3 had observed the effect qualitatively;
+Phase 7 measures it.
+
+The mechanism is now pinned down: on znver2 and znver3 the 16..64 B code was
+byte-identical to the shipped kernel's — the same instructions at the same
+offsets `0x0..0x34` — so the only difference was where the out-of-line
+32..64 B block sat, and that alone cost 16% on a 2 ns copy. (On v3 the knob's
+own codegen also differs, so the v3 figure is confounded between the knob and
+the alignment; the alignment explanation is the one that holds on all three
+targets, since the same 64→32 shift occurred on each.)
+
+**Consequence for future kernel changes: any rung that modifies code above the
+tiny path MUST verify branch-target alignment before measurement.** This is
+now a precondition in the pre-registration template — P1 in
+`src/rungs/f4win64_aligned.c` — and it is checked on the LINKED binary, because
+the function's absolute alignment is a link-time property (the `.text`
+section's alignment, raised by the `.p2align` that `-falign-labels` emits),
+not an object-time one.
 
 ## 1 MiB row — audited, not retracted
 
