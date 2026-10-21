@@ -360,8 +360,8 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
     if (T_LIKELY((((uintptr_t)s | (uintptr_t)d) & 31u) == 0u)) {
         for (; i + TUNED_BLOCK <= n; i += TUNED_BLOCK) {
             if (pf && n >= (size_t)TUNED_PF_MIN) {
-                _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
-                _mm_prefetch((const char *)(d + i + pf), _MM_HINT_T0);
+                _mm_prefetch((const char *)((uintptr_t)s + i + pf), _MM_HINT_T0);
+                _mm_prefetch((const char *)((uintptr_t)d + i + pf), _MM_HINT_T0);
 #if TUNED_PF_BIG_BYTES
                 /* Phase 8.3 attempt 2: the second line of the next iteration.
                  * pf2 is loop-invariant, so the compiler unswitches on it and
@@ -382,8 +382,8 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
     {
         for (; i + TUNED_BLOCK <= n; i += TUNED_BLOCK) {
             if (pf && n >= (size_t)TUNED_PF_MIN) {
-                _mm_prefetch((const char *)(s + i + pf), _MM_HINT_T0);
-                _mm_prefetch((const char *)(d + i + pf), _MM_HINT_T0);
+                _mm_prefetch((const char *)((uintptr_t)s + i + pf), _MM_HINT_T0);
+                _mm_prefetch((const char *)((uintptr_t)d + i + pf), _MM_HINT_T0);
 #if TUNED_PF_BIG_BYTES
                 /* Phase 8.3 attempt 2: the second line of the next iteration.
                  * pf2 is loop-invariant, so the compiler unswitches on it and
@@ -407,8 +407,9 @@ void *TUNED_FN(void *dst, const void *src, size_t n)
      *
      * The `if (i < n)` is worth its branch: when the size is a whole number of
      * blocks (every power-of-two ladder size with unroll 4/8/16) the remainder is
-     * zero and the overlap block would copy up to 512 B that the loop has already
-     * copied - 25% of a 2 KB copy, 12% of a 4 KB copy. The branch is 100%
+     * zero and the overlap block would copy a whole TUNED_BLOCK (128 B at the
+     * shipped unroll of 4) that the loop has already copied - 6.25% of a 2 KB
+     * copy, 3% of a 4 KB copy. The branch is 100%
      * predicted in the iters loop (the size is constant per case), so it costs a
      * uop and saves a whole block of stores. */
     if (i < n)

@@ -501,11 +501,34 @@ static int canary_check(const impl_t *im, int op, size_t n, size_t so, size_t do
     return 0;
 }
 
+/* The offset pairs that exercise the alignment classes the kernel branches
+ * on. The 32-byte-aligned fast path is taken only when BOTH pointers are
+ * 32-byte aligned; with three random pairs per size (offsets 0..63) that
+ * happened for 4 of 4096 pairs, i.e. for 10 of the 4097 sizes - the aligned
+ * path was effectively unverified. These fixed pairs make every size test
+ * it, plus the "one pointer aligned, one not" case, which is the one the
+ * alignment test (an OR of both pointers) exists for. */
+static const unsigned char VALIGN_PAIRS[][2] = {
+    {  0,  0 },   /* both 32 B aligned */
+    {  0, 32 },
+    { 32,  0 },
+    { 32, 32 },
+    {  0, 16 },   /* source aligned, destination not */
+    { 16,  0 },   /* destination aligned, source not */
+};
+#define VALIGN_N ((int)(sizeof VALIGN_PAIRS / sizeof VALIGN_PAIRS[0]))
+
 static int verify_small(const impl_t *im)
 {
     for (size_t n = 0; n <= VMAXN; n++) {
-        for (int t = 0; t < 3; t++) {
-            size_t so = rng_offset(), dof = rng_offset();
+        for (int t = 0; t < 3 + VALIGN_N; t++) {
+            size_t so, dof;
+            if (t < 3) {
+                so = rng_offset(); dof = rng_offset();
+            } else {
+                so = VALIGN_PAIRS[t - 3][0];
+                dof = VALIGN_PAIRS[t - 3][1];
+            }
             unsigned char *s = vsrc + VCAN + so;
             unsigned char *d = vdst + VCAN + dof;
             for (size_t i = 0; i < n; i++)

@@ -284,7 +284,8 @@ reports `median_of_mins` (the median of the 45 per-rep samples) and the spread
 under both statistics. The full contract, the two-tier claim model, the
 audit-width gate, the evidence policy and the reproducibility gate are in
 [METHODOLOGY.md](METHODOLOGY.md). Verified, not assumed: every kernel is checked
-byte-for-byte against an independent reference with canaries before it is timed.
+byte-for-byte against an independent reference with canaries (`make verify`;
+`make gate` is a static audit and does not execute a kernel).
 
 **One warning about the median at 512 B and below.** The per-rep distribution at
 those sizes is bimodal: a fast mode and a slow mode, ~471 ns apart per

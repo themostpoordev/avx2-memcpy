@@ -37,9 +37,12 @@ and 64 B — two of the certified wins. Nothing else is required: no allocator,
 no runtime init, no CPU dispatch.
 
 The contract is identical to `memcpy` for non-overlapping `src` and `dst`, at
-any alignment and any `n` including 0. Every build is checked byte-for-byte
-against an independent reference with 64 B canaries on both sides before it is
-timed (`make gate`).
+any alignment and any `n` including 0. `make verify` checks it byte-for-byte
+against an independent reference, with 64 B canaries on both sides of the
+destination, over n = 0..4096 at every alignment class the kernel branches on
+plus a fixed size list up to 256 MiB. `make gate` is a *different* check — it is
+static (it reads the sources and the built objects) and never executes a
+kernel, so a green gate says nothing about the copy semantics.
 
 ## Opt-in: `memcpy_mid`
 
@@ -68,6 +71,7 @@ certified on all three targets.[^record] General callers should use
 ```sh
 make                      # bench/bench_znver2, bench_znver3, bench_v3 (static)
 make gate                 # audits + width gate: mandatory before any benchmark
+make verify               # the byte-for-byte copy-contract check, on all three targets
 make experiments          # the documented-loss dispatcher (not built by default)
 taskset -c 2 ./bench/bench_znver2 --list
 taskset -c 2 ./bench/bench_znver2 --impl glibc,fast --sizes 16,64,512 --reps 5
@@ -128,6 +132,7 @@ alternative, and it is in the tree so the comparison can be re-made.
 ```sh
 make clean && make -j$(nproc)
 make gate
+make verify
 taskset -c 2 ./bench/bench_znver2 --impl fast --verify
 taskset -c 2 ./bench/bench_znver2 --impl glibc,fast --sizes 16,32,64,512,1048576 \
     --reps 5 --iters 4000

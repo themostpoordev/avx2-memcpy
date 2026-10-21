@@ -6,13 +6,15 @@
  * Contract: identical to memcpy for non-overlapping src and dst. Any alignment
  * of either pointer, any n including 0. Reads and writes exactly [0, n) - the
  * implementation's overlapping tail copies stay inside the destination, which is
- * checked on every build by the harness's --verify pass (n = 0..4096, randomised
- * offsets, 64 B canaries on both sides).
+ * checked by the harness's --verify pass (`make verify`: n = 0..4096, three
+ * randomised offset pairs plus a fixed set that covers every alignment class
+ * the kernel branches on, 64 B canaries on both sides).
  *
  * Measured against glibc on Zen 2 (docs/RESULTS.md, the committed reference
  * campaign): +38% at 16 B, +25% at 32 B, +25% at 64 B, +10% at 128 B, +8% at
- * 256 B, +14.6% at 512 B, level from 1 KiB to 64 KiB, -2.3% at 16 KiB. Those
- * numbers are silicon-specific; benchmark on yours before relying on them.
+ * 256 B, +14.6% at 512 B, and level from 1 KiB to 64 KiB (16 KiB included).
+ * Those numbers are silicon-specific; benchmark on yours before relying on
+ * them.
  *
  * BUILD FLAGS. This kernel must be compiled with
  *     gcc -O3 -fno-crossjumping -falign-labels=64
@@ -26,9 +28,11 @@
 
 #include <stddef.h>
 
-/* Requires AVX2 for n > 64. For n <= 64 the small path uses
-   SSE2 only and runs on any x86-64. Calls with n > 64 on a
-   non-AVX2 CPU will SIGILL. */
+/* Requires AVX2 for n > 64. For 16 <= n <= 64 the small path uses
+   128-bit moves, but this translation unit is compiled -mavx2, so
+   those moves are VEX-encoded and need AVX (2011 or later); only
+   n <= 15 uses baseline x86-64 instructions. A call outside those
+   ranges on a CPU without the required feature raises SIGILL. */
 void *memcpy_fast(void *dst, const void *src, size_t n);
 
 #endif /* MEMCPY_FAST_H */

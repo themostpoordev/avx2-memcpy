@@ -194,6 +194,27 @@ audit-width: $(BINS)
 gate: audit audit-width
 	@echo "gate: audit + audit-width PASSED - benchmarking permitted"
 
+# ---- byte-for-byte correctness ---------------------------------------------
+# The kernel's contract - identical to memcpy for non-overlapping src and dst,
+# at any alignment, any n including 0, and writing exactly [0, n) - is checked
+# by the harness's --verify pass.  It is NOT checked by `make gate`: the gate
+# is static (it reads the sources and the built objects) and never executes a
+# kernel, so a green gate says nothing about the copy semantics.
+#
+# --verify covers n = 0..4096 with three randomised offset pairs per size plus
+# a fixed set of offset pairs that covers every alignment class the kernel
+# branches on (including the 32-byte-aligned fast path, which the random pairs
+# alone reached for only 10 of the 4097 sizes), with 64 B canaries on both
+# sides of the destination, plus the fixed size list up to 256 MiB.  The largest
+# size is compared by content only: the 256 MiB allocation has no room for
+# canaries.
+verify: $(BINS)
+	@for t in $(TARGETS); do \
+		echo "== verify $$t =="; \
+		./bench/bench_$$t --impl fast,f4_baseline,mid --verify || exit 1; \
+	done
+	@echo "verify: PASSED - the copy contract holds byte-for-byte"
+
 # ---- reference kernel ------------------------------------------------------
 # V9c, the predecessor of the shipped kernel. Not a rung, not audited, not
 # linked into the benchmark binaries: it exists so its measured numbers stay

@@ -53,15 +53,28 @@ often the honest result.
 
 ## 4. Verify first, then time
 
-No kernel is benchmarked until it passes, on the exact binary being measured:
+No kernel is benchmarked until it passes, on the exact binary being measured
+(`make verify`):
 
 * byte-for-byte equality against an independent golden reference for
   `n = 0..4096` with randomised source/destination offsets, then the full size
   list;
+* **a fixed set of offset pairs per size, covering every alignment class the
+  kernel branches on** — in particular both pointers 32-byte aligned, which is
+  the only condition under which the aligned fast path is taken, and the
+  "one pointer aligned, one not" case the alignment test exists for. Three
+  random pairs per size reach the aligned path for 4 of 4096 pairs, i.e. for
+  10 of the 4097 sizes; the fixed pairs make it 4097 of 4097;
 * 64 B canaries on both sides of the destination, so an overlapping tail that
   writes outside `[0, n)` fails;
 * a PMU-cycles cross-check, because `cycles/byte` is derived from raw cycles and
   the raw counter is published alongside it.
+
+Two limits, stated rather than implied: the largest size (256 MiB) is compared
+by content only, because that allocation has no room for canaries; and
+`make gate` is a *separate*, static check (it reads the sources and the built
+objects and never executes a kernel), so a green gate is not a statement about
+the copy semantics.
 
 `make gate` runs before every campaign. A campaign whose tree fails the gate
 writes no timing row at all.
