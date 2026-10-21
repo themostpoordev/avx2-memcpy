@@ -133,11 +133,13 @@ def main():
                   % (impl, d['d_min'], d['d_med'], d['min'], d['med'],
                      d['spread']))
         if CTL in r and CAND in r and SHIPPED in r:
-            print('      decomposition: shape (pf_ctl vs fast) %+.2f%% floor / '
-                  '%+.2f%% median   |   distance (pf_big vs pf_ctl) %+.2f%% '
+            print('      decomposition: shape (%s vs fast) %+.2f%% floor / '
+                  '%+.2f%% median   |   the candidate change (%s vs %s) %+.2f%% '
                   'floor / %+.2f%% median'
-                  % (r[CTL]['d_min'] - r[SHIPPED]['d_min'],
+                  % (CTL,
+                     r[CTL]['d_min'] - r[SHIPPED]['d_min'],
                      r[CTL]['d_med'] - r[SHIPPED]['d_med'],
+                     CAND, CTL,
                      r[CAND]['d_min'] - r[CTL]['d_min'],
                      r[CAND]['d_med'] - r[CTL]['d_med']))
 

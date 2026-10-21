@@ -256,3 +256,55 @@ mechanism on Phase 8.1 Q3's list is closed by evidence:
   `MADV_HUGEPAGE`d.
 
 So attempt 2 is the last lever, and it is aimed at the identified cause.
+
+## Attempt 2 result — REJECTED (S2 and S3). 1 MiB is closed as parity.
+
+Campaign: `docs/data/raw/phase7_p832_<target>.windows.log`, 9 windows x 5 reps,
+3960 REPS lines per target, **zero migrated reps**.
+
+| criterion | result | verdict |
+|---|---|---|
+| **P1** the certified rows unchanged within the null band | every cell inside its limit; the largest move is 16 KiB on znver3 at +1.07%, inside its 1.50% limit | **PASS** |
+| **P2** the 1 MiB floor preserved | +10.31 / **+8.50** / +10.90% against the Phase 7.4 reference's +12.58 / +11.10 / +9.42% | **FAIL on 2 of 3** |
+| **P3** the 1 MiB median moved to ≥ +1.5% | −2.14 / −1.85 / −2.32% — 0 of 3 | **FAIL** |
+
+**The decomposition.** At 1 MiB:
+
+| effect | floor | median |
+|---|--:|--:|
+| the loop shape (`pf_ctl2` vs `fast`) | +1.91 / +1.52 / +1.60% | −0.44 / −0.63 / −0.11% |
+| the extra coverage (`pf_cov2` vs `pf_ctl2`) | −0.77 / −1.53 / −1.29% | **+0.37 / +0.81 / −0.07%** |
+
+**The extra coverage did essentially nothing to the median** — +0.37, +0.81 and
+−0.07 points, i.e. inside the noise — and cost 0.8–1.5 points at the floor.
+The shape change is again free at the median. The candidate's median
+(−2.14 / −1.85 / −2.32%) is the shipped kernel's median (−2.07 / −2.03 /
+−2.14%): **the coverage hypothesis is falsified.** Covering both lines of the
+next iteration in software does not stop the loads from stalling, which means
+the hardware prefetcher was already covering them and the stall is elsewhere.
+
+**S3 fires. 1 MiB is accepted as parity and Phase 8 is closed.** There is no
+attempt 3, and there is no mechanism left to attempt it with: every entry on
+Phase 8.1's Q3 list is now closed by evidence, the two attempts here
+(distance, coverage) are both measured, and the mechanism analysis says the
+median is the memory-hierarchy's rate for a 2 MiB working set — 27 B/cycle,
+which is what glibc gets too.
+
+### What the four campaigns say about the published 1 MiB row
+
+The shipped kernel's 1 MiB floor against glibc, in all four campaigns that
+measured it:
+
+| campaign | znver2 | znver3 | v3 |
+|---|--:|--:|--:|
+| phase7_4 (the reference) | +12.58% | +11.10% | +9.42% |
+| phase8_2 | +10.57% | +9.20% | +10.81% |
+| phase8_3 attempt 1 | +10.08% | +11.92% | +11.08% |
+| phase8_3 attempt 2 | +9.16% | +8.50% | +10.60% |
+
+The **value** moves by about ±2 points from campaign to campaign — it is a
+best-of-45 lottery draws, and the lottery is the fast mode. The **verdict**
+does not: every one of the twelve cells is a win at the floor (the lowest is
++8.50%) and every one of the twelve medians is between −1.55% and −2.32%,
+i.e. parity. That is the row's honest shape, and it is what
+[NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) records.

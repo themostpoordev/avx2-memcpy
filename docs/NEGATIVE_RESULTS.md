@@ -341,6 +341,65 @@ Full distributions: `docs/data/phase7_p72b_acceptance_summary.csv` (the
 `docs/data/raw/phase7_p72b_40000_<target>.windows.log` and
 `docs/data/raw/phase7_p74_<target>.windows.log`.
 
+## 1 MiB — closed as parity after two attempts (Phase 8)
+
+The 1 MiB row is a **win at the floor** (+9 to +13% against glibc) and
+**parity at the median** (−1.6% to −2.3%). Two attempts were made to move the
+median, both pre-registered, both with a shape control, and both rejected.
+
+**Attempt 1 — a longer prefetch distance (4096 B instead of 128 B, in the
+512 KiB–2 MiB band).** The premise was that 128 B of lookahead covers only
+~1.4 ns of the copy's latency and that a longer distance would cover the DRAM
+latency instead. **It cost 2–4% at the floor and 1–2% at the median, on all
+three targets.** The control showed the loop-shape change was free, so the
+loss was the distance: a 32× longer lookahead fetches lines that are evicted
+before they are used, and the wasted bandwidth is charged to the copy.
+
+**Attempt 2 — prefetch coverage (a second prefetch pair at +192, so both 64 B
+lines of the next iteration are covered in software).** This was aimed at the
+cause attempt 1 identified: the copy runs either at the loop's store-port
+ceiling (32 B/cycle, 91 GB/s) or at the memory-hierarchy rate (27 B/cycle,
+76 GB/s), and the gap is the loads not being covered in time. **The extra
+coverage moved the median by +0.37 / +0.81 / −0.07 points — inside the noise
+— and cost 0.8–1.5 points at the floor.** The coverage hypothesis is
+falsified: the hardware prefetcher was already covering the second line, and
+the stall is elsewhere.
+
+**Why there is no attempt 3.** Every mechanism on the Phase 8.1 candidate list
+is closed by evidence: the prefetch distance (the alignment-unroll grid, and
+attempt 1); the aligned main loop and the unroll 4/6/8/12 (the alignment-unroll
+grid: "only unroll 4 with the aligned loop and a gated +128 B prefetch
+survived"); `PREFETCHW` on the destination ("no size at which it wins"); NT
+stores (the ladder rung already writes **full 64 B lines** — four
+`_mm256_stream_si256` per 128 B iteration — so its 17–22 GB/s is not a
+granularity artifact, and the sweep found no size at which NT wins, a 69–372%
+loss); L2/L3 residency and page-boundary crossing (not kernel-actionable: the
+working set's residency is host state, and the buffers are already
+`MADV_HUGEPAGE`d).
+
+**What the row actually is.** The fast mode is a **per-(kernel, rep) lottery**:
+in the attempt-1 campaign `fast`, `pf_ctl`, `pf_big` and `f4_baseline` each
+won it in 3–7 of their 45 reps, at *different* reps, while `glibc` never won it
+in any of its 135. The published floor is a best-of-45-lottery-draws statistic,
+and it moves by about ±2 points from campaign to campaign:
+
+| campaign | znver2 | znver3 | v3 |
+|---|--:|--:|--:|
+| phase7_4 (the reference) | +12.58% | +11.10% | +9.42% |
+| phase8_2 | +10.57% | +9.20% | +10.81% |
+| phase8_3 attempt 1 | +10.08% | +11.92% | +11.08% |
+| phase8_3 attempt 2 | +9.16% | +8.50% | +10.60% |
+
+The **value** moves; the **verdict** does not. All twelve cells are wins at the
+floor (the lowest +8.50%) and all twelve medians are between −1.55% and
+−2.32%, i.e. parity. A caller doing one 1 MiB copy sees the median.
+
+The full analysis is in [`docs/phase8_1_mechanism.md`](phase8_1_mechanism.md)
+and the pre-registration, criteria, campaigns and results are in
+[`docs/phase8_3_preregistration.md`](phase8_3_preregistration.md). The logs
+are `docs/data/raw/phase7_p83_*.windows.log` and
+`docs/data/raw/phase7_p832_*.windows.log`.
+
 ## What this list is for
 
 If you are about to try one of these, the measurement says where it ends. If you

@@ -126,6 +126,14 @@ three times 10 s apart and required it to be below 2% and stable.
   +11.10 / +9.42% at the floor. Tier B, so the row is `measured` on two of the
   three targets and a win on the third. The floor is a real property of the
   kernel; the median is what a caller actually sees. It is not a claim.
+  **Phase 8 attacked this row twice and closed it as parity** — a longer
+  prefetch distance and a wider prefetch coverage were both measured, both
+  rejected, and the floor is a per-(kernel, rep) lottery whose value moves by
+  about ±2 points from campaign to campaign while its verdict does not: all
+  twelve cells across the four campaigns that measured it are wins at the
+  floor and parity at the median. The full record is in
+  [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md) and
+  [`docs/phase8_3_preregistration.md`](phase8_3_preregistration.md).
 * **256 B**: a win at the floor on all three targets, a tie at the median on
   znver2 (see above).
 
