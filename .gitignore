@@ -7,16 +7,23 @@ bench/bench_*
 bench_bench_*
 
 # ---- measurement outputs (evidence stays on disk, not in history) ----
+# results/live/  current run outputs: window logs, CSVs, PGO workload logs
+# results/archive/ superseded campaigns, kept until a later pass proves them
+#                  redundant - moved, never deleted on the first pass
+results/live/
+results/archive/
 results/*.csv
 results/*.log
 results/*.svg
 *.tmp
 
 # ---- but the FROZEN snapshots of finalized kernels ARE tracked ----
-# (`results/*.csv` does not cross directories, so committed/ was never ignored;
-#  these negations are explicit so the intent survives future edits)
+# (these negations are explicit: committed/ and docs/ are the record, and a
+#  record that is gitignored is not a record)
 !results/committed/
 !results/committed/*.csv
+!results/docs/
+!results/docs/**
 
 # ---- .recon probe binaries (the .c probe sources ARE committed) ----
 .recon/*.o

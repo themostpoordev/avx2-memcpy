@@ -9,13 +9,23 @@
 #   bench/bench_znver3   (as originally prescribed)
 #   bench/bench_v3       (-march=x86-64-v3 generic baseline)
 #
-# Usage:
-#   make            build all three binaries
-#   make TARGET=znver2 single   build only one (TARGET in {znver2,znver3,v3})
-#   make perf                   run scripts/run_perf.sh (PMU counter validation)
-#   make objdump                dump per-target disassembly for codegen diffing
-#   make plot                   report plotting toolchain status
+# Layout: rungs in src/memcpy/ and src/memset/, harness-level files in src/,
+# tooling in scripts/{campaign,analyze,report,verify,gen,measure}/, evidence in
+# results/{committed,docs}/ (tracked) and results/{live,archive}/ (not tracked).
+#
+# Usage (top level):
+#   make            build all three binaries (parallel: make -j$(nproc))
+#   make gate       audit + audit-width; mandatory before any benchmark
+#   make bench      alias for all (the binaries ARE the benchmark)
+#   make snapshot   freeze the current CSVs into results/committed/
 #   make clean
+# Scoped:
+#   make memcpy / make memset   build one family's rungs, all targets
+#   make campaign NAME=<script> [ARGS='...']   scripts/campaign/<script>.sh
+#   make report   NAME=<script> [ARGS='...']   scripts/report/<script>.sh
+#   make TARGET=znver2 single   one binary only (TARGET in {znver2,znver3,v3})
+# Diagnostics: make perf, make objdump, make plot, make audit, make routecheck,
+#              make ntprobe, make perf6probe
 # ---------------------------------------------------------------------------
 
 CC      := clang
@@ -25,7 +35,7 @@ OPT     := -O3 -fomit-frame-pointer
 # We reimplement memcpy/memset; never let the compiler synthesize libc calls
 # or fold our loops into them. This is a correctness-of-measurement flag.
 NOBUILTIN := -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-memmove -fno-builtin-bzero
-INC     := -Isrc -Ibench
+INC     := -Isrc -Isrc/memcpy -Ibench
 LDFLAGS := -static -lm
 
 FLAGS_znver2 := -march=znver2 -mtune=znver2 -mavx2 -mfma
@@ -37,8 +47,8 @@ TARGETS := znver2 znver3 v3
 # Kernels whose loops MUST stay scalar. clang -O3 -march=znver2 turns a byte
 # loop into a 4x32B vmovups loop otherwise, which would make a "naive" baseline
 # silently be an AVX2 kernel and make every comparison meaningless.
-SCALAR_SRCS  := src/ref_scalar.c src/memcpy_naive.c src/memcpy_word.c \
-                src/memcpy_rep.c src/memset_naive.c src/memset_word.c
+SCALAR_SRCS  := src/ref_scalar.c src/memcpy/memcpy_naive.c src/memcpy/memcpy_word.c \
+                src/memcpy/memcpy_rep.c src/memset/memset_naive.c src/memset/memset_word.c
 SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 
 # Kernel 3 must really be 128-bit SSE2: the ladder's point is that rung 3 is 16B-wide
@@ -49,18 +59,21 @@ SCALAR_FLAGS := -fno-vectorize -fno-slp-vectorize -fno-unroll-loops
 # forces the legacy 128-bit encodings (movdqu) and keeps the ladder monotonic;
 # the AVX2 rung that follows is built with AVX enabled, so rung3-vs-rung4 measures
 # exactly the width step it is supposed to.
-SSE2_SRCS  := src/memcpy_sse2.c src/memset_sse2.c
+SSE2_SRCS  := src/memcpy/memcpy_sse2.c src/memset/memset_sse2.c
 SSE2_FLAGS := -mno-avx -mno-avx2 -mno-fma -fno-slp-vectorize -fno-vectorize
 
-# Any new src/*.c kernel is picked up automatically (no Makefile edit per kernel).
-SRCS   := $(wildcard src/*.c) $(wildcard bench/*.c)
+# Any new src/memcpy/*.c or src/memset/*.c kernel is picked up automatically (no
+# Makefile edit per kernel). src/*.c is what is neither: registry.c, ref_scalar.c.
+MEMCPY_SRCS := $(wildcard src/memcpy/*.c) $(wildcard src/memcpy/*.S)
+MEMSET_SRCS := $(wildcard src/memset/*.c) $(wildcard src/memset/*.S)
+SRCS   := $(wildcard src/*.c) $(wildcard src/memcpy/*.c) $(wildcard src/memset/*.c) $(wildcard bench/*.c)
 SRC_OBJ := $(patsubst %.c,%.o,$(SRCS))
 # Hand-written assembly rungs (src/*.S) are picked up the same way, so a kernel
 # written in asm needs no per-kernel Makefile edit either. Tooling is clang's
 # INTEGRATED assembler in GAS/AT&T syntax: no nasm (not installed, and installing
 # one is not permitted). The capital .S means the file also goes through the C
 # preprocessor, which is what the kernel's comments rely on.
-ASM_SRCS := $(wildcard src/*.S)
+ASM_SRCS := $(wildcard src/memcpy/*.S) $(wildcard src/memset/*.S)
 ASM_OBJ  := $(patsubst %.S,%.o,$(ASM_SRCS))
 SRC_OBJ  += $(ASM_OBJ)
 BINS   := $(addprefix bench/bench_,$(TARGETS))
@@ -71,12 +84,38 @@ $(error TARGET must be one of: $(TARGETS))
 endif
 
 .PHONY: all bench single perf objdump plot clean list audit audit-width gate snapshot ntprobe routecheck \
+        memcpy memset campaign report \
         perf6probe perf6gen \
         $(addprefix ntprobe-,$(TARGETS)) $(addprefix perf6probe-,$(TARGETS)) \
         $(addprefix perf6gen-,$(TARGETS))
 
 all: $(BINS)
 bench: $(BINS)
+
+# ---- scoped builds --------------------------------------------------------
+# The ladder binaries hold every rung, so `make all` compiles everything by
+# design. These build one family's objects for all three targets, which is what
+# a change confined to one family needs.
+# object paths keep their src/ prefix: build/<t>/src/memcpy/x.o is what the
+# pattern rule build/<t>/%.o: %.c resolves, so the stem must be the source path.
+MEMCPY_OBJ := $(patsubst %.S,%.o,$(patsubst %.c,%.o,$(MEMCPY_SRCS)))
+MEMSET_OBJ := $(patsubst %.S,%.o,$(patsubst %.c,%.o,$(MEMSET_SRCS)))
+memcpy: $(foreach t,$(TARGETS),$(addprefix build/$(t)/,$(MEMCPY_OBJ)))
+	@echo "memcpy: $(words $(MEMCPY_SRCS)) rung source(s) x $(words $(TARGETS)) target(s) built"
+memset: $(foreach t,$(TARGETS),$(addprefix build/$(t)/,$(MEMSET_OBJ)))
+	@echo "memset: $(words $(MEMSET_SRCS)) rung source(s) x $(words $(TARGETS)) target(s) built"
+
+# ---- campaign / report dispatch -------------------------------------------
+# One entry point for the frozen protocol so a campaign cannot be started with a
+# hand-typed command line that differs from the last one.
+campaign:
+	@test -n "$(NAME)" || { echo "usage: make campaign NAME=<script-in-scripts/campaign> [ARGS='...']"; exit 2; }
+	@test -f scripts/campaign/$(NAME).sh || { echo "campaign: no scripts/campaign/$(NAME).sh" >&2; exit 2; }
+	@sh scripts/campaign/$(NAME).sh $(ARGS)
+report:
+	@test -n "$(NAME)" || { echo "usage: make report NAME=<script-in-scripts/report> [ARGS='...']"; exit 2; }
+	@test -f scripts/report/$(NAME).sh || { echo "report: no scripts/report/$(NAME).sh" >&2; exit 2; }
+	@sh scripts/report/$(NAME).sh $(ARGS)
 
 # ---- per-target object + link rules ---------------------------------------
 # build/<t>/<path>.o  from  <path>.c   with the flags of target <t>.
@@ -113,7 +152,7 @@ $(foreach t,$(TARGETS),$(eval $(call TARGET_RULES,$(t))))
 # so a measured difference between an _gcc rung and its clang twin is the
 # compiler, not the flag set. GCC_EXTRA_<file> adds per-rung flags (V6).
 CC_GCC := gcc
-GCC_SRCS := $(wildcard src/*_gcc.c) $(wildcard src/*_gcc_*.c)
+GCC_SRCS := $(wildcard src/memcpy/*_gcc.c) $(wildcard src/memcpy/*_gcc_*.c)
 
 # ---- V6 per-rung compiler flags -------------------------------------------
 # Each _gcc_<flag> rung is memcpy_avx2_final_gcc.c's source plus exactly one flag,
@@ -173,7 +212,7 @@ $(foreach t,$(TARGETS),$(foreach s,$(GCC_SRCS),$(eval $(call GCC_RULE_ONE,$(t),$
 #
 # The two sources live in src/perf6/, not src/, so the normal wildcard build never
 # sees them and `make bench` never depends on profile data existing. They are
-# still width-gated: scripts/audit_width.sh walks src/perf6/*.c too, so "not in
+# still width-gated: scripts/verify/audit_width.sh walks src/perf6/*.c too, so "not in
 # the ladder binaries" does not mean "not checked".
 #
 # PGO is two stages and both write the SAME object path on purpose: gcc derives
@@ -189,7 +228,7 @@ PERF6_LADDER := 16,32,64,128,256,512,1024,4096,16384,65536,262144,1048576,419430
 # make, not by the shell (same trap as the ntprobe and snapshot recipes).
 define PERF6_TARGET
 perf6gen-$(1): $(BINS)
-	@mkdir -p build/$(1)/src/perf6 build/$(1)/probe results
+	@mkdir -p build/$(1)/src/perf6 build/$(1)/probe results/live results/docs/codegen results/docs/analysis results/archive
 	@rm -f build/$(1)/src/perf6/memcpy_avx2_final_pgo.o build/$(1)/src/perf6/memcpy_avx2_final_pgo.gcda
 	@echo "perf6[$(1)] stage 1: instrumented kernel (-fprofile-generate) and profile workload"
 	@$$(CC_GCC) $$(STD) $$(OPT) $$(WARN) $$(NOBUILTIN) $$(FLAGS_$(1)) $$(INC) \
@@ -208,11 +247,11 @@ perf6gen-$(1): $(BINS)
 	  $$(LDFLAGS) -fprofile-generate -o bench/bench_$(1)_perf6gen
 	@taskset -c 2 ./bench/bench_$(1)_perf6gen --impl avx2_final_pgo \
 	  --sizes $(PERF6_LADDER) --reps 3 --iters 2000 --warmup 2 --budget 0.05 \
-	  > results/perf6_$(1)_pgo_workload.log 2>&1 \
-	  || { echo "perf6[$(1)] profile workload FAILED - see results/perf6_$(1)_pgo_workload.log" >&2; tail -5 results/perf6_$(1)_pgo_workload.log >&2; exit 1; }
+	  > results/live/perf6_$(1)_pgo_workload.log 2>&1 \
+	  || { echo "perf6[$(1)] profile workload FAILED - see results/live/perf6_$(1)_pgo_workload.log" >&2; tail -5 results/live/perf6_$(1)_pgo_workload.log >&2; exit 1; }
 	@test -f build/$(1)/src/perf6/memcpy_avx2_final_pgo.gcda \
 	  || { echo "perf6[$(1)] FAILED: no .gcda was written, so stage 2 would compile with NO profile" >&2; exit 1; }
-	@echo "perf6[$(1)] stage 1 done: .gcda present, workload log results/perf6_$(1)_pgo_workload.log"
+	@echo "perf6[$(1)] stage 1 done: .gcda present, workload log results/live/perf6_$(1)_pgo_workload.log"
 
 perf6probe-$(1): perf6gen-$(1)
 	@echo "perf6[$(1)] stage 2: -fprofile-use kernel + -flto link -> bench/bench_$(1)_perf6"
@@ -272,9 +311,9 @@ audit: $(BINS)
 # 32-byte ymm; 25faacb: the AVX2 rung's small path did too). This target closes
 # that gap mechanically: for every kernel TU and every target it disassembles the
 # object, finds the widest data-movement access, and fails if it is not the width
-# the rung declares. See scripts/audit_width.sh and scripts/audit_width_allow.txt.
+# the rung declares. See scripts/verify/audit_width.sh and scripts/verify/audit_width_allow.txt.
 audit-width: $(BINS)
-	@sh scripts/audit_width.sh
+	@sh scripts/verify/audit_width.sh
 
 # `gate` is what a campaign must pass before it is allowed to produce a timing
 # row: both audits, in one command, with one exit status.
@@ -288,7 +327,7 @@ gate: audit audit-width
 # whether a size exists at which NT wins. The Kernel 5 probe found NO winning
 # size on this box (NT loses 69-371% at every size), so the committed rung keeps
 # a fixed EXPERIMENTAL GATE (MEMCPY_AVX2_NT_THRESHOLD, see its source header),
-# NOT a probe-selected crossover. scripts/nt_threshold_probe.sh drives it; the
+# NOT a probe-selected crossover. scripts/measure/nt_threshold_probe.sh drives it; the
 # probe binary is never snapshotted and never enters a claim.
 NT_THRESHOLD ?= 64
 # $(FLAGS_$$t) does NOT work here: make looks up a variable literally named
@@ -322,10 +361,10 @@ ntprobe: $(addprefix ntprobe-,$(TARGETS))
 # class boundary +-1, comparing the compiled class mapping with the Phase 2.5
 # routing rules and the per-class copies against memcpy_ref. No clock is read.
 routecheck: $(BINS)
-	@sh scripts/hybrid_route_check.sh
+	@sh scripts/verify/hybrid_route_check.sh
 
 # ---- committed CSV snapshots (frozen record of finalized kernels) ----------
-# results/*.csv is gitignored (rewritten every run). A kernel that has passed
+# results/live/*.csv is gitignored (rewritten every run). A kernel that has passed
 # verify and completed its benchmark is copied into results/committed/, which IS
 # tracked. A snapshot that already exists is FROZEN: this target refuses to
 # overwrite one that differs from the current run, because a record that
@@ -339,7 +378,7 @@ SNAPSHOT_IMPLS := ref_scalar naive word sse2 avx2 avx2_pf2 avx2_pf4 avx2_nt asm 
 #     consumed by make, not by the shell, so `$n` expanded to empty and the
 #     arithmetic was eaten as a make variable reference.
 snapshot: $(BINS)
-	@for f in results/phase2_*.csv; do \
+	@for f in results/live/phase2_*.csv; do \
 	  [ -f "$$f" ] || continue; \
 	  case "$$f" in *.median_based.csv) continue ;; esac; \
 	  impl=$$(basename "$$f" .csv | cut -d_ -f2); \
@@ -351,7 +390,7 @@ snapshot: $(BINS)
 	@mkdir -p results/committed; n=0; refused=0; \
 	for impl in $(SNAPSHOT_IMPLS); do \
 	  for t in $(TARGETS); do \
-	    src=results/phase2_$${impl}_$${t}.csv; \
+	    src=results/live/phase2_$${impl}_$${t}.csv; \
 	    dst=results/committed/phase2_$${impl}_$${t}.csv; \
 	    [ -f "$$src" ] || continue; \
 	    if [ -f "$$dst" ] && ! cmp -s "$$src" "$$dst"; then \
@@ -366,10 +405,10 @@ snapshot: $(BINS)
 
 # ---- phase 4 counter validation -------------------------------------------
 perf: $(BINS)
-	./scripts/run_perf.sh
+	./scripts/measure/run_perf.sh
 
 plot:
-	@./scripts/plot.sh
+	@./scripts/report/plot.sh
 
 list:
 	@./bench/bench_$(TARGET) --list

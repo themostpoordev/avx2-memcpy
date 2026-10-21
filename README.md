@@ -16,19 +16,31 @@ Every claim in this repo must be reproducible from a command in this file.
 | 2 | *(merged into 1)* harness validated end-to-end | done |
 | 3 | Kernel ladder: naive → word → sse2 → avx2 → avx2_nt → asm → rep, memset ladder | not started |
 | 4 | Hardware-counter passes per kernel, IPC / miss rates | plumbing ready (`--pmu`) |
-| 5 | `results/ANALYSIS.md`, SVG figures, glibc comparison, verdict | not started |
+| 5 | `results/docs/ANALYSIS.md`, SVG figures, glibc comparison, verdict | not started |
 
 ## Build
 
 ```sh
 make                      # bench/bench_znver2, bench_znver3, bench_v3 (static)
 make TARGET=znver2 single # just one
+make memcpy               # only the memcpy rungs, all three targets
+make memset               # only the memset rungs
+make gate                 # audit + audit-width: mandatory before any benchmark
+make campaign NAME=phase2_6_run ARGS='tag impls target'   # one measured campaign
+make report NAME=phase2_k6_report                         # regenerate a report
+make snapshot             # freeze current CSVs into results/committed/
 make audit                # per-target vectorisation audit of src/*.o
 make objdump              # build/<t>/disasm.txt for codegen diffing
-make perf                 # scripts/run_perf.sh (PMU validation pass)
+make perf                 # scripts/measure/run_perf.sh (PMU validation pass)
 make plot                 # plotting toolchain status
 make clean
 ```
+
+Tree: `src/memcpy/` and `src/memset/` hold the rungs, `src/` holds `common.h`,
+`registry.c` and the generated `routing_table.h`; `scripts/{campaign,analyze,
+report,verify,gen,measure}/`; `results/committed/` (frozen CSVs),
+`results/docs/` (protocol, deliverable, analysis, codegen diffs),
+`results/live/` (current run) and `results/archive/` (superseded).
 
 Three codegen targets exist on purpose: the silicon is *not* Zen 3 (see below),
 so "which tuning target wins" is a deliverable, not an assumption.
@@ -105,7 +117,7 @@ Recorded because each one invalidated a plausible-looking measurement:
   throughput is 2x 256-bit loads/cycle, 1x 256-bit store/cycle, 2x 256-bit
   `vaddps`/cycle, and TSC = 2.7947 GHz — Naples would show ~1x 256-bit
   add/cycle and 128-bit split stores. EPYC 7402-class (Zen 2, 2.8 GHz) fits.
-  Hence the `znver2` target. Full evidence: `results/ANALYSIS.md` (Phase 5).
+  Hence the `znver2` target. Full evidence: `results/docs/ANALYSIS.md` (Phase 5).
 * **`perf_event_open` group reads put the times first.**
   `{nr, time_enabled, time_running, values...}` — not the reverse. Reading it
   backwards returns a *time* where a *count* is expected; here it silently
@@ -151,8 +163,8 @@ src/registry.c           implementation table (one row per kernel)
 bench/harness.h          impl_t, clock-domain primitives
 bench/bench.c            benchmark harness (CSV, align, verify, calib)
 bench/pmu.h bench/pmu.c  our own perf_event_open wrapper
-scripts/run_perf.sh      PMU validation pass
-scripts/plot.sh          plotting toolchain status
+scripts/measure/run_perf.sh      PMU validation pass
+scripts/report/plot.sh          plotting toolchain status
 scripts/plot.gnuplot     retained recipe (gnuplot absent)
 results/                 CSVs, logs, ANALYSIS.md, SVG (Phase 5)
 .recon/                  Phase 0/1 evidence probes — do not delete
