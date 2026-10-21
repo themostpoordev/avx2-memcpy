@@ -1,5 +1,29 @@
 # Results — memcpy_fast against glibc on Zen 2
 
+## Final Result Summary
+
+Every size the project measured, in exactly one category each.
+
+| Category | Count | Sizes | Note |
+|---|--:|---|---|
+| Certified wins | 7 | 8, 16, 32, 64, 128, 256, 512 B | 256 B: win at floor (+8.41% x3), tie at median |
+| Tie / Parity | 6 | 1 KiB, 4 KiB, 16 KiB, 64 KiB, 256 KiB, 1 MiB | 16 KiB: tie; 1 MiB: parity at median |
+| Unmeasurable | 1 | 4 MiB | spread 117-197%, no claim |
+| Certified losses | 0 | — | — |
+| Total measured | 14 | — | — |
+
+**How a row is classified.** A size is a **certified win** when it clears the
+applicable floor and the row is stable, a **tie / parity** when it does not
+clear it or its median does not, and **unmeasurable** when the spread makes
+the cell unresolvable. A row may carry a median caveat without changing its
+category: 256 B is a certified win by its floor (+8.41% on all three targets,
+identical in two campaigns) and notes a median tie; 1 MiB is a parity by its
+median, because its floor is a best-of-45-lottery-draws statistic that moves
+about ±2 points from campaign to campaign while its median does not. The
+verdict labels used in the tables below are `WIN`, `WIN (2/3)`, `WIN (floor) /
+TIE (median)`, `TIE`, `PARITY`, `MEASURED` and `UNMEASURABLE`; every row below
+carries exactly one of them.
+
 ## Reference campaigns
 
 Every number below comes from a **committed** reference campaign
@@ -47,12 +71,12 @@ the chain, and the 512 B path's position in the code stream moves with it.
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict | reference |
 |--:|--:|--:|--:|:--:|:--:|:--|
-| 8 B | **+25.49** / **+25.49** / **+38.93** | **+30.67** / **+24.67** / **+39.95** | 3.2/4.7/5.4 | A/A/A | WIN x3 | phase7_4 |
-| 16 B | **+38.02** / **+38.02** / **+50.31** | **+27.44** / **+27.44** / **+50.00** | 16.5/16.6/18.3 | B/B/A | WIN x3 | phase7_4 |
-| 32 B | **+25.49** / **+25.10** / **+25.45** | **+5.05** / **+25.10** / **+25.10** | 22.7/29.6/30.6 | A/B/A | WIN x3 | phase7_4 |
-| 64 B | **+25.10** / **+25.49** / **+25.49** | **+19.19** / **+25.10** / **+25.10** | 11.6/11.2/11.6 | A/A/A | WIN x3 | phase7_4 |
-| 128 B | **+10.11** / **+10.11** / **+10.11** | **+45.22** / **+10.11** / **+10.11** | 61.3/60.6/61.6 | A/A/A | WIN 2/3 | phase7_4 |
-| 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN 2/3 | phase7_4 |
+| 8 B | **+25.49** / **+25.49** / **+38.93** | **+30.67** / **+24.67** / **+39.95** | 3.2/4.7/5.4 | A/A/A | WIN | phase7_4 |
+| 16 B | **+38.02** / **+38.02** / **+50.31** | **+27.44** / **+27.44** / **+50.00** | 16.5/16.6/18.3 | B/B/A | WIN | phase7_4 |
+| 32 B | **+25.49** / **+25.10** / **+25.45** | **+5.05** / **+25.10** / **+25.10** | 22.7/29.6/30.6 | A/B/A | WIN | phase7_4 |
+| 64 B | **+25.10** / **+25.49** / **+25.49** | **+19.19** / **+25.10** / **+25.10** | 11.6/11.2/11.6 | A/A/A | WIN | phase7_4 |
+| 128 B | **+10.11** / **+10.11** / **+10.11** | **+45.22** / **+10.11** / **+10.11** | 61.3/60.6/61.6 | A/A/A | WIN (2/3; v3 measured) | phase7_4 |
+| 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN (2/3; znver2 measured) | phase7_4 |
 
 **Read the tier column as the measurement's stability, not the claim's.** Tier A
 means the per-window spread is ≤ 10%, so the floor is `max(1.5%, the null
@@ -91,7 +115,7 @@ tie at the median.**
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict | reference |
 |--:|--:|--:|--:|:--:|:--:|:--|
-| 256 B | **+8.41** / **+8.41** / **+8.41** | **+0.00** / **+8.41** / **+8.41** | 42.6/67.9/69.8 | A/A/A | WIN x3 at the floor | phase7_4 |
+| 256 B | **+8.41** / **+8.41** / **+8.41** | **+0.00** / **+8.41** / **+8.41** | 42.6/67.9/69.8 | A/A/A | WIN (floor) / TIE (median) | phase7_4 |
 
 The Phase 8.2 quiet-window campaign re-measured this size and left the row
 where it was: the floor is **+8.41% on all three targets**, identical to the
@@ -107,7 +131,7 @@ bimodal, and the same two modes the 1 MiB row shows are visible here.
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict | reference |
 |--:|--:|--:|--:|:--:|:--:|:--|
-| 1 MiB | **+12.58** / **+11.10** / **+9.42** | -1.96 / -2.02 / -2.29 | 11.3/15.9/6.1 | A/B/B | WIN 1/3 at the floor | phase7_4 |
+| 1 MiB | **+12.58** / **+11.10** / **+9.42** | -1.96 / -2.02 / -2.29 | 11.3/15.9/6.1 | A/B/B | PARITY | phase7_4 |
 
 **The mechanism is documented in
 [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md).** At 1 MiB the copy runs at either
@@ -177,19 +201,19 @@ evidence policy and the reproducibility gate are in
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict |
 |--:|--:|--:|--:|:--:|:--|
-| 16 B | **+38.02** / **+38.02** / **+50.31** | **+27.44** / **+27.44** / **+50.00** | 16.5/16.6/18.3 | B/B/A | WIN x3 |
-| 32 B | **+25.49** / **+25.10** / **+25.45** | **+5.05** / **+25.10** / **+25.10** | 22.7/29.6/30.6 | A/B/A | WIN x3 |
-| 64 B | **+25.10** / **+25.49** / **+25.49** | **+19.19** / **+25.10** / **+25.10** | 11.6/11.2/11.6 | A/A/A | WIN x3 |
-| 128 B | **+10.11** / **+10.11** / **+10.11** | **+45.22** / **+10.11** / **+10.11** | 61.3/60.6/61.6 | A/A/A | WIN 2/3 |
-| 256 B | **+8.41** / **+8.41** / **+8.41** | **+0.00** / **+8.41** / **+8.41** | 42.6/67.9/69.8 | A/A/A | WIN x3 |
-| 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN 2/3 |
-| 1 KiB | -1.41 / -1.41 / -1.41 | **+2.42** / **+1.61** / -71.87 | 44.7/42.7/43.2 | B/A/A | measured x3 |
-| 4 KiB | **+0.00** / **+0.00** / **+0.00** | **+0.00** / -22.69 / -22.69 | 22.3/21.7/21.2 | B/A/A | measured x3 |
-| 16 KiB | -1.19 / -1.19 / -0.12 | -1.56 / -3.85 / -2.32 | 39.6/38.9/4.2 | A/B/B | **measured x3** (a tie) |
-| 64 KiB | -0.72 / **+0.00** / -0.80 | -0.79 / -1.58 / **+0.79** | 3.6/3.6/4.5 | A/A/A | measured x3 |
-| 256 KiB | -1.33 / **+0.00** / **+0.40** | -2.28 / -1.21 / -1.55 | 7.8/7.8/10.9 | B/B/B | measured x3 |
-| 1 MiB | **+12.58** / **+11.10** / **+9.42** | -1.96 / -2.02 / -2.29 | 11.3/15.9/6.1 | A/B/B | WIN 1/3 |
-| 4 MiB | **+0.16** / **+6.91** / **+1.49** | **+4.47** / **+6.39** / **+1.82** | 117.1/196.9/99.2 | B/B/B | measured x3 |
+| 16 B | **+38.02** / **+38.02** / **+50.31** | **+27.44** / **+27.44** / **+50.00** | 16.5/16.6/18.3 | B/B/A | WIN |
+| 32 B | **+25.49** / **+25.10** / **+25.45** | **+5.05** / **+25.10** / **+25.10** | 22.7/29.6/30.6 | A/B/A | WIN |
+| 64 B | **+25.10** / **+25.49** / **+25.49** | **+19.19** / **+25.10** / **+25.10** | 11.6/11.2/11.6 | A/A/A | WIN |
+| 128 B | **+10.11** / **+10.11** / **+10.11** | **+45.22** / **+10.11** / **+10.11** | 61.3/60.6/61.6 | A/A/A | WIN (2/3; v3 measured) |
+| 256 B | **+8.41** / **+8.41** / **+8.41** | **+0.00** / **+8.41** / **+8.41** | 42.6/67.9/69.8 | A/A/A | WIN (floor) / TIE (median) |
+| 512 B | **+14.59** / **+14.59** / **+14.59** | **+6.28** / **+13.47** / -34.90 | 39.5/60.5/38.0 | B/A/A | WIN (2/3; znver2 measured) |
+| 1 KiB | -1.41 / -1.41 / -1.41 | **+2.42** / **+1.61** / -71.87 | 44.7/42.7/43.2 | B/A/A | MEASURED |
+| 4 KiB | **+0.00** / **+0.00** / **+0.00** | **+0.00** / -22.69 / -22.69 | 22.3/21.7/21.2 | B/A/A | MEASURED |
+| 16 KiB | -1.19 / -1.19 / -0.12 | -1.56 / -3.85 / -2.32 | 39.6/38.9/4.2 | A/B/B | TIE |
+| 64 KiB | -0.72 / **+0.00** / -0.80 | -0.79 / -1.58 / **+0.79** | 3.6/3.6/4.5 | A/A/A | MEASURED |
+| 256 KiB | -1.33 / **+0.00** / **+0.40** | -2.28 / -1.21 / -1.55 | 7.8/7.8/10.9 | B/B/B | MEASURED |
+| 1 MiB | **+12.58** / **+11.10** / **+9.42** | -1.96 / -2.02 / -2.29 | 11.3/15.9/6.1 | A/B/B | PARITY |
+| 4 MiB | **+0.16** / **+6.91** / **+1.49** | **+4.47** / **+6.39** / **+1.82** | 117.1/196.9/99.2 | B/B/B | UNMEASURABLE |
 
 `spread%` = (p99 − p25) / median of the 45 per-rep mins.
 spread > 50% indicates a bimodal distribution — for those

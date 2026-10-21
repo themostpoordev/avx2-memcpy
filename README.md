@@ -1,12 +1,12 @@
 # avx2-memcpy
 
-A from-scratch memcpy/memset library for Zen 2, built measurement-first. On the
-reference host, it beats glibc at 7 sizes (8, 16, 32, 64, 128, 256, 512 B) with
-zero certified losses. One size (256 B) is a certified win at the floor but a
-tie at the median — the row is bimodal. One size (1 MiB) is ahead of glibc in
-about a third of reps — by 13–16% when it wins, 6–9% behind when it does not —
-and never consistently faster: parity at the median, win at the floor. Every
-published number is reconstructable from a committed window log.
+A from-scratch memcpy/memset library for Zen 2, built measurement-first: on the
+reference host it beats glibc at **7 sizes** (8, 16, 32, 64, 128, 256, 512 B),
+ties at **6** (1 KiB, 4 KiB, 16 KiB, 64 KiB, 256 KiB, 1 MiB), has **1
+unmeasurable** size (4 MiB) and **no certified losses** — every size mapped to
+exactly one category in the
+[final result summary](docs/RESULTS.md#final-result-summary). Every published
+number is reconstructable from a committed window log.
 
 Two copy kernels, seven reference rungs, one benchmark harness, and a measurement
 protocol that decides what may be called a win. Everything here is built from
