@@ -379,13 +379,13 @@ Open items, in the order they would be worth someone's time:
     src/memcpy/memcpy_avx2_final.c              V9, clang
     src/memcpy/memcpy_avx2_final_gcc.c          V9, gcc
     src/memcpy/memcpy_avx2_final16_gcc.c        V8 (32..63 B as 16 B moves)
-    src/memcpy_avx2_final_gcc_{ofast,unroll,noplt}.c      V6 flag rungs
+    src/memcpy/memcpy_avx2_final_gcc_{ofast,unroll,noplt}.c      V6 flag rungs
     src/memcpy/memcpy_avx2_final_gcc_noomit.c   V6 (-fno-omit-frame-pointer)
     src/perf6/memcpy_avx2_final_{lto,pgo}.c               V6 -flto, V7 PGO
     src/memcpy/memcpy_avx2_final_v2_gcc.c       V9b (TUNED_SMALL_PATH 1)
     src/memcpy/memcpy_avx2_final_v2_gcc_noxj.c  V9c (+ -fno-crossjumping)
-    src/memcpy_avx2_t{4,8,12}.c          V4 unroll sweep
-    src/memcpy_avx2_t8{a,al,ap,alp}.c    V3/V5 alignment x prefetch grid
+    src/memcpy/memcpy_avx2_t{4,8,12}.c          V4 unroll sweep
+    src/memcpy/memcpy_avx2_t8{a,al,ap,alp}.c    V3/V5 alignment x prefetch grid
     src/memcpy/memcpy_avx2_gcc.c                V1 (K4 body, gcc)
     scripts/campaign/phase2_6_run.sh              one campaign, protocol in one place
     scripts/analyze/phase2_6_matrix.sh           per-rung table with tiers and floors

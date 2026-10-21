@@ -747,7 +747,7 @@ what attempt 3 of this campaign implements.
    in the final completion check, by disassembling the built object — which no
    earlier check did. At 32–63 B the four 16 B accesses of the small path are
    merged by clang's SLP vectorizer into 32 B `ymm` accesses: 14 ymm references in
-   `build/<target>/src/memcpy_avx2.o`, four of them in that branch (16–31 B stays
+   `build/<target>/src/memcpy/memcpy_avx2.o`, four of them in that branch (16–31 B stays
    genuinely 16 B). This is the same merge that made the "SSE2" rung compile to
    AVX at `43f01dc`. Correctness is unaffected — each merged access covers
    `[0,32)` or `[n-32,n)`, both inside `[0,n)` for n ≥ 32, so the 64 B canaries in

@@ -5,7 +5,7 @@ hybrid/asm/NT rungs, or the certified deliverable. Five attack vectors (P1-P5),
 each measured in the frozen protocol: 13-point ladder, 5 reps x 9 windows,
 `RUN_TO_CAP=1`, `taskset -c 2`, `make gate` inside every campaign. Raw logs are
 `results/live/phase2_6_p3{mid,mid2,asm,disp2}_<target>.windows.log`; the matrices
-next to this file (`results/phase3_p3*.matrix.txt`) are produced from those logs
+next to this file (`results/docs/analysis/phase3_p3*.matrix.txt`) are produced from those logs
 by `scripts/analyze/phase2_6_matrix.sh`, which shares its floor/tier definitions with
 `scripts/analyze/mo_analyze.sh`. Nothing below is hand-entered.
 
