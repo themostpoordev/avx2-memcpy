@@ -30,7 +30,7 @@ jobs:
     name: gate and published-claims check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: build all three targets
         run: make clean && make -j"$(nproc)"
@@ -45,7 +45,7 @@ jobs:
     name: byte-for-byte verification
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: build
         run: make clean && make -j"$(nproc)"
