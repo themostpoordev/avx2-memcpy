@@ -144,3 +144,47 @@ band threshold itself is unchanged, and the gate can still fail.
 The retry rule is unchanged: on failure, wait 5 minutes and retry once; on a
 second failure, **STOP**, report "host not quiet today", reschedule, and do
 not measure.
+
+## Second amendment to the gate's probe list (committed before the retry)
+
+The corrected gate then failed at **one** size: 256 KiB, whose band came out
+2.41–4.67% with a 2.26 pp across-sample spread. That size is not a size
+Phase 8.2 measures, and its band is **not satisfiable at a 2% threshold even
+in the committed good campaign** — the good campaign's own band at 256 KiB was
+**3.58% on znver2** (0.96% znver3, 0.39% v3), and at 1 MiB it was **2.57% on
+znver2** (0.05% / 0.09%). The same unsatisfiability defect, at the two sizes
+whose bands are known-unstable here.
+
+The good campaign's band at every size, which is the evidence for which sizes
+can carry a 2% threshold at all:
+
+| size | znver2 | znver3 | v3 | usable as a probe |
+|---|--:|--:|--:|:--|
+| 16 B | 8.70% | 4.35% | 9.53% | no |
+| 32 B | 0.08% | 2.48% | 5.13% | znver2 only |
+| 64 B | 5.08% | 4.04% | 20.56% | no |
+| 128 B | 0.00% | 0.00% | 18.35% | znver2/znver3 |
+| 256 B | 0.00% | 0.00% | 1.07% | **yes** |
+| 512 B | 0.56% | 0.00% | 0.56% | **yes** |
+| 1 KiB | 0.00% | 0.00% | 0.29% | yes |
+| 4 KiB | 14.68% | 0.00% | 0.00% | znver3/v3 |
+| 16 KiB | 0.08% | 0.19% | 0.16% | **yes** |
+| 64 KiB | 0.04% | 0.23% | 0.04% | **yes** |
+| 256 KiB | 3.58% | 0.96% | 0.39% | znver3/v3 only |
+| 1 MiB | 2.57% | 0.05% | 0.09% | znver3/v3 only |
+
+**The final gate** therefore samples the band at **16 KiB and 256 B** — the two
+sizes Phase 8.2 actually measures and decides — plus **64 KiB and 512 B** as
+controls, all of which carry a band below 2% on every target in the good
+campaign. 256 KiB and 1 MiB are dropped from the probe list: their bands are
+not satisfiable at 2% on znver2, and 8.2's own regression gate covers 1 MiB as a
+control whose band is known-unstable here, so a 2% probe there would reject a
+good host. The **threshold stays 2%**, the sample count stays 30, the three
+consecutive 10 s samples stay, and the gate can still fail.
+
+This is the second and last correction to the gate. Both corrections are
+removals of clauses proven unsatisfiable on committed data, both are committed
+before the measurement they gate, and neither relaxes the 2% threshold. The
+retry rule is unchanged: the run below is the 5-minute retry, and a second
+failure means **STOP, report "host not quiet today", reschedule, do not
+measure**.
