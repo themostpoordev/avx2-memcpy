@@ -3,22 +3,21 @@
 A from-scratch memcpy library for Zen 2, built measurement-first: **7
 certified wins over glibc and zero certified losses — on fixed-size, warm-cache
 workloads.** In a mixed-size stream, the realistic case, the picture changes: at
-4 KiB–1 MiB the kernel is **27–55% behind glibc** (0 of 9 target x repetition
-cells), at 1 KiB it is 12% ahead, and at 512 B and below the copy is too short
-for this harness's clock to resolve at all, so those wins are **untested rather
-than refuted**. Every published number is reconstructable from a committed
-window log.
+4 KiB–1 MiB the kernel is **27–55% behind glibc**, in **0 of the 9
+measurements** (3 build targets × 3 repetitions), while at 1 KiB it is 12%
+ahead; and at 512 B and below the copy is too short for this harness's clock to
+resolve at all, so the wins that matter most are **untested rather than
+refuted**. The method, the per-size table and the committed logs are in
+[docs/NEGATIVE_RESULTS.md](docs/NEGATIVE_RESULTS.md#mixed-size-workloads-phase-10--the-fixed-size-wins-do-not-carry-over).
+Every published number is reconstructable from a committed window log.
 
 Two copy kernels, seven reference rungs, one benchmark harness, and a measurement
 protocol that decides what may be called a win. Everything here is built from
 scratch: no libc wrappers around the functions being replaced, no copied glibc
 code, and every claim traces to a committed window log in
-[`docs/data/raw/`](docs/data/raw/) and the CSV regenerated from it.
-
-Every row below is backed by a raw window log committed under
-[`docs/data/raw/`](docs/data/raw/), and the summary CSV is regenerated from that
-log. A row whose two statistics disagree is labelled conditional rather than
-resolved in favour of the more favourable one; the full tables are in
+[`docs/data/raw/`](docs/data/raw/) and the CSV regenerated from it. A row whose
+two statistics disagree is labelled conditional rather than resolved in favour
+of the more favourable one; the full tables are in
 [docs/RESULTS.md](docs/RESULTS.md).
 
 ## Quick start
@@ -44,6 +43,11 @@ destination, over n = 0..4096 at every alignment class the kernel branches on
 plus a fixed size list up to 256 MiB. `make gate` is a *different* check — it is
 static (it reads the sources and the built objects) and never executes a
 kernel, so a green gate says nothing about the copy semantics.
+
+**This is a memcpy library.** `memcpy_fast` and `memcpy_mid` are the two
+shipped kernels, and there is no shipped `memset` — the `memset_*` rungs in
+`src/rungs/` exist only as ladder references for the copy path's methodology,
+and the ladder's `memset` columns are not part of the certified table.
 
 ## Opt-in: `memcpy_mid`
 
@@ -91,11 +95,6 @@ records median, min, p99, PMU cycles and per-rep CPU/migration status, and only
 dispatcher, shipped so it can be verified. It holds the rungs and the schedules
 that lost, with the measurement that retired each one.
 
-**This is a memcpy library.** `memcpy_fast` and `memcpy_mid` are the two
-shipped kernels, and there is no shipped `memset` — the `memset_*` rungs in
-`src/rungs/` exist only as ladder references for the copy path's methodology,
-and the ladder's `memset` columns are not part of the certified table.
-
 ## Documentation
 
 | document | what it is |
@@ -103,6 +102,7 @@ and the ladder's `memset` columns are not part of the certified table.
 | [docs/RESULTS.md](docs/RESULTS.md) | every certified number, the ladder, the caveats |
 | [docs/METHODOLOGY.md](docs/METHODOLOGY.md) | `min_of_mins`, the two-tier claim model, the width gate, evidence policy, reproducibility gate |
 | [docs/NEGATIVE_RESULTS.md](docs/NEGATIVE_RESULTS.md) | what was tried and lost, with the mechanism for each |
+| [docs/phase10_preregistration.md](docs/phase10_preregistration.md) | the mixed-size benchmark: the pre-registration, the method, the results, and the path to the committed logs |
 | [experiments/README.md](experiments/README.md) | the documented-loss dispatcher, shipped so it can be verified |
 
 ## The baseline and the toolchain
@@ -175,19 +175,34 @@ lost.
   wins. The floors are also the *best case* for a size-specialised kernel: each
   size is measured on its own, in a tight loop, on a warm cache, single
   threaded, with the branch predictor trained on that one size. A workload that
-  mixes sizes pays a mispredict and a cache miss per call. We have not measured
-  that case, and it is where the margin would shrink first.
+  mixes sizes pays a mispredict and a cache miss per call — and we have measured
+  that case: in a mixed-size stream the kernel is **27–55% behind glibc at
+  4 KiB–1 MiB** (0 of the 9 measurements), 12% ahead at 1 KiB, and below
+  512 B too short for the harness's clock to resolve at all. The method and the
+  committed logs are in
+  [docs/NEGATIVE_RESULTS.md](docs/NEGATIVE_RESULTS.md#mixed-size-workloads-phase-10--the-fixed-size-wins-do-not-carry-over).
 
 ## What the project proves
 
 That a small, hand-written AVX2 `memcpy` can beat glibc at seven sizes on one
-host, and — more usefully — that the *size* of that claim is knowable. Every
-number here comes from a committed window log, every candidate was measured
-against the kernel it would replace in the same windows, and the two-tier
-claim model (a floor and a median, with a null band between them) is what
-separates the seven real wins from the three sizes that are a tie, a lottery
-or unmeasurable. The failures are documented with the same rigour as the wins,
-and nothing was retracted along the way.
+host, and — more usefully — that **the size of that claim is knowable, and it
+is smaller than the fixed-size numbers suggest.** Every number here comes from a
+committed window log, every candidate was measured against the kernel it would
+replace in the same windows, and the two-tier claim model (a floor and a
+median, with a null band between them) is what separates the seven real wins
+from the three sizes that are a tie, a lottery or unmeasurable.
+
+The most useful thing the project produced is the measurement of **where those
+seven wins stop working**. They are wins on fixed-size, warm-cache workloads —
+one size in a tight loop, with the branch predictor trained on it. Measured on
+a mixed-size stream, where the predictor is re-learned per call, the kernel is
+27–55% behind glibc at 4 KiB–1 MiB, and at 512 B and below the copy is too
+short for the harness's clock to resolve at all — so the wins that matter most
+are untested rather than refuted. That boundary was found by measuring the case
+the published numbers did not cover, not by re-reading the ones that did.
+
+The failures are documented with the same rigour as the wins, and nothing was
+retracted along the way.
 
 ## License
 
