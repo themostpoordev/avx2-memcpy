@@ -142,6 +142,7 @@ typedef struct {
     int    thp;
     int    mixed;            /* Phase 10: run the mixed-size campaign */
     int    mixed_reverse;    /* diagnostic: run the impls in reverse order */
+    size_t mixed_one;       /* diagnostic: a single-size sequence of this size */
     const char *mixed_dist;  /* "d1" (attempt 1) or "d2" (attempt 2) */
     uint64_t seed;           /* mixed-mode sequence seed */
     const char *impl_filter;
@@ -163,7 +164,8 @@ static opts_t g_opt = {
     .warmup_max = 10, .iters_max = 100, .iters_min = 3,
     .budget_s = 1.0, .warm_budget_s = 0.5,
     .verify = 1, .quick = 0, .thp = 0, .impl_filter = NULL,
-    .mixed = 0, .mixed_dist = "d1", .mixed_reverse = 0, .seed = 0,
+    .mixed = 0, .mixed_dist = "d1", .mixed_reverse = 0, .mixed_one = 0,
+    .seed = 0,
     .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL, .arg4 = NULL,
     .reps = 5,        /* >= 3 required; 5 chosen to damp the noise measured in Phase 2 */
     .dump_reps = 0, .impl_buf = { 0 }, .impl_buf_len = 0,
@@ -1359,6 +1361,11 @@ static int mixed_campaign(const char *dist, uint64_t seed0)
     size_t nsz = 0;
     const size_t *sizes = mixed_set(dist, &nsz);
     size_t nseq = g_opt.iters_max;
+    if (g_opt.mixed_one) {
+        static size_t one[1];
+        one[0] = g_opt.mixed_one;
+        sizes = one; nsz = 1;
+    }
     if (nseq < nsz) nseq = nsz;
     nseq = (nseq / nsz) * nsz;              /* keep the multiset balanced */
     if (nseq % nsz) {                       /* defensive: never leave a tail */
@@ -1478,6 +1485,16 @@ int main(int argc, char **argv)
             }
         }
         else if (!strcmp(a, "--mixed-reverse")) g_opt.mixed_reverse = 1;
+        else if (!strcmp(a, "--mixed-size") && i + 1 < argc) {
+            /* DIAGNOSTIC, not one of the declared distributions: a sequence of
+             * one size, so the per-copy timing can be compared with the same
+             * size measured in fixed mode.  If the two agree, the per-call
+             * timing is fair; if they do not, the mixed numbers are an
+             * artifact of the clock and mean nothing. */
+            g_opt.mixed = 1;
+            g_opt.mixed_one = (size_t)strtoull(argv[++i], NULL, 0);
+            g_opt.mixed_dist = "one";
+        }
         else if (!strcmp(a, "--seed") && i + 1 < argc)
             g_opt.seed = strtoull(argv[++i], NULL, 0);
         else if (a[0] == '-' && a[1] == '-')              g_opt.mode = a;

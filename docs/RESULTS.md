@@ -182,6 +182,75 @@ memory-bound and the row follows the host.
 The two rows that were losses before Phase 8 are now: **128 B a certified win**
 (+10.11%) and **16 KiB a tie** (−1.19 / −1.19 / −0.12%).
 
+## Mixed-size workloads — where the fixed-size wins do not carry over
+
+Every number above is a **fixed-size** measurement: the harness copies the
+same size in a tight loop, on buffers allocated once and touched once, single
+threaded, with the branch predictor trained on that one size. That is the best
+case for a size-specialised kernel, and it is not what a real program does.
+
+Phase 10 measured the mixed-size case. The pre-registration, the two declared
+distributions, the criteria and the results are in
+[`docs/phase10_preregistration.md`](phase10_preregistration.md); the logs are
+`docs/data/raw/phase10_d1_*.windows.log` and
+`docs/data/raw/phase10_d2_*.windows.log`.
+
+**Distribution D1** — uniform over the 14 measured sizes, 285 copies of each per
+rep (3990 iterations), the size changing from call to call. **D2** — uniform
+over the 9 sizes ≤ 4 KiB, 444 copies of each (3996 iterations), the
+pre-registered retry. Both were declared before the measurement; neither was
+chosen after seeing a result.
+
+**The aggregate is not a verdict.** The pre-registered statistic is the
+minimum over 45 reps, and in fixed mode that is a meaningful floor because a
+cell's per-rep spread is a few percent. In mixed mode **glibc's own per-rep
+spread of the aggregate is 178–222%**: the byte-weighted aggregate is
+dominated by the 4 MiB copies, which this project already calls unmeasurable.
+The run-to-run swing of the D1 aggregate for the same kernel, the same seeds
+and the same tree is −15.29% to +5.64%, which is larger than the 1.5%
+acceptance threshold. D2 fails differently: every size is ≤ 4 KiB, so the
+~40 ns per-call clock is ~80% of the measured time.
+
+**What does resolve, is the per-size rows** — and they split the table in two:
+
+| size | mixed-mode delta (znver2 / znver3 / v3, median of 45 reps) | median | cells ≥ 0 | fixed-mode delta |
+|---|--:|--:|--:|--:|
+| 8 B | +8.76 / +37.02 / +13.19% | +14.96% | 7 of 9 | +25.49% |
+| 16 B | +20.52 / +43.56 / +22.42% | +22.42% | 9 of 9 | +38.02% |
+| 32 B | −6.00 / +25.97 / +13.59% | +14.53% | 6 of 9 | +25.49% |
+| 64 B | +11.23 / +36.61 / +22.61% | +22.66% | 9 of 9 | +25.10% |
+| 128 B | +0.02 / +13.04 / −23.91% | +0.02% | 5 of 9 | +10.11% |
+| 256 B | −27.00 / +0.42 / −16.66% | −16.66% | 2 of 9 | +8.41% |
+| 512 B | +0.35 / −15.66 / −36.15% | −15.66% | 3 of 9 | +14.59% |
+| 1 KiB | +12.38 / +11.65 / +2.13% | +11.65% | 8 of 9 | −1.41% |
+| 4 KiB | −56.03 / −51.49 / −54.79% | **−55.09%** | **0 of 9** | +0.00% |
+| 16 KiB | −31.28 / −33.81 / −31.08% | **−31.83%** | **0 of 9** | −2.28% |
+| 64 KiB | −35.62 / −36.03 / −29.97% | **−32.23%** | **0 of 9** | −0.72% |
+| 256 KiB | −27.32 / −26.74 / −25.88% | **−26.74%** | **0 of 9** | −1.33% |
+| 1 MiB | −26.87 / −27.64 / −24.07% | **−27.04%** | **0 of 9** | +12.58% |
+| 4 MiB | +7.32 / +8.58 / +12.50% | +9.61% | 9 of 9 | +0.16% |
+
+**Which sizes' mixed-mode delta is ≥ 0% and which is < 0%** — at 1 KiB and up
+(the rows the instrument can resolve): 1 KiB and 4 MiB are ≥ 0%; **4 KiB, 16 KiB,
+64 KiB, 256 KiB and 1 MiB are < 0% in 9 of 9 cells each.** At 512 B and below
+the rows are **not reportable** — a clock pair costs ~40 ns here and an 8 B copy
+takes ~2.7 ns — so the question those rows were meant to answer, whether the
+8–64 B wins depend on a warm predictor, is **unanswered by this instrument**,
+not answered "no".
+
+**Two controls make the negative result credible.** A diagnostic single-size
+sequence (not one of the declared distributions) gives, at 1 KiB, 17.96 ns/copy
+for glibc and 17.66 for the kernel, and at 4 KiB 58.33 and 58.27 — agreement
+to 0.1%, so the per-call timing is fair and the loss is caused by the
+*interleaving*. And the implementation order no longer moves the result: the
+same D1 sequence run in registry order and reversed gives aggregate deltas of
++11.96% and +11.33% (0.6 points apart; before the warm-up fix they were 5.7
+points apart and the 8 B per-size delta flipped sign).
+
+**The mechanism is not isolated.** This host exposes no L3/LLC events, so
+"a cold destination and a cold predictor cost this kernel more than they cost
+glibc" is an **inference**; the measurement is the nine cells per size.
+
 ## Method note
 
 Every row is reconstructable from a committed window log in

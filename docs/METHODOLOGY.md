@@ -76,6 +76,42 @@ by content only, because that allocation has no room for canaries; and
 objects and never executes a kernel), so a green gate is not a statement about
 the copy semantics.
 
+## 4a. What a fixed-size result is, and what it is not
+
+Every fixed-size number this project publishes is the **floor of a warm
+predictor**: the harness copies the same size in a tight loop, on buffers
+allocated once and touched once, single threaded, with the branch predictor
+trained on that one size, and it reports the minimum over 45 reps. The minimum
+is a meaningful floor because a cell's per-rep spread is a few percent.
+
+That is the best case for a size-specialised kernel. A real program calls
+`memcpy` with mixed sizes, so the predictor is re-learned per call and the
+destination is not the one the previous call left in cache.
+
+**The mixed-size measurement is the honest comparator for a real workload,
+and it costs more than the statistic it needs.** In mixed mode a cell's
+per-rep spread is 178–222% rather than a few percent, so the minimum over 45
+reps stops being a floor and becomes an extreme order statistic; the
+representative number is the **median over the reps**, and the per-call timing
+resolves a copy no shorter than about 1 KiB on this host (a clock pair costs
+~40 ns and an 8 B copy takes ~2.7 ns). The predictor cost is therefore
+reported **per size**, with the sizes the instrument cannot resolve marked as
+unmeasured rather than as failures.
+
+The results are in [`docs/phase10_preregistration.md`](phase10_preregistration.md)
+and the *Mixed-size workloads* section of
+[RESULTS.md](RESULTS.md#mixed-size-workloads--where-the-fixed-size-wins-do-not-carry-over).
+In short: the fixed-size wins do not carry over. At 4 KiB–1 MiB the kernel is
+27–55% behind glibc in a mixed stream (0 of 9 target x repetition cells), and
+at 512 B and below the measurement cannot resolve the copy at all, so those
+wins are untested rather than refuted.
+
+Two controls keep that negative result honest: a diagnostic single-size
+sequence shows the per-call timing is fair (the two kernels agree to 0.1% at
+1 KiB and at 4 KiB, so the loss is caused by the interleaving and not by the
+instrument), and the implementation order no longer moves the result (0.6
+points apart, after the warm-up fix that made it 5.7 points apart).
+
 `make gate` runs before every campaign. A campaign whose tree fails the gate
 writes no timing row at all.
 

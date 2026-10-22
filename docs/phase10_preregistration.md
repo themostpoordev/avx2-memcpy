@@ -237,3 +237,105 @@ copy. The negative-residual count is reported for every run, and the per-size
 numbers must be read with it. The aggregate is byte-diluted by the same
 overhead and is not affected: the overhead is a constant per call, common to
 every implementation and every size, so it cancels in the deltas.
+
+## Results
+
+Campaigns: `docs/data/raw/phase10_d1_<target>_r<rep>.windows.log` and
+`docs/data/raw/phase10_d2_<target>_r<rep>.windows.log` (9 windows x 5 reps per
+window, three independent repetitions, per target; 3990 iterations per rep for
+D1, 3996 for D2). Summaries: `docs/data/phase10_d1_summary.csv` and
+`docs/data/phase10_d2_summary.csv`, produced by
+`scripts/phase10_analyze.py`.
+
+### A1 verdict: FAIL on both attempts
+
+| | znver2 | znver3 | v3 |
+|---|--:|--:|--:|
+| D1, aggregate floor delta, per repetition | −15.29 / +1.42 / +4.60% | −5.42 / −0.16 / −2.95% | +5.64 / +2.92 / +1.29% |
+| D1, aggregate floor delta, median of the 3 | +1.42% | −2.95% | +2.92% |
+| D1, **total-time** ratio, median of the 3 | +1.26% | +4.38% | +6.02% |
+| D2, aggregate floor delta, per repetition | +25.84 / +215.12 / −596.06% | +28.16 / +27.84 / +15.64% | +50.52 / +18.22 / +50.71% |
+
+A1 (the aggregate floor delta ≥ +1.5% on ≥ 2 of 3 targets) is **not met**:
+one target of three clears it on D1, and the D2 numbers are not a verdict at
+all (a +215% and a −596% in the same distribution are not a measurement of a
+kernel).
+
+**Why the pre-registered statistic does not survive the mixed workload.** In
+fixed mode the per-rep spread of a cell is a few percent, so the minimum over
+45 reps is a meaningful floor. In mixed mode **glibc's own per-rep spread of
+the aggregate is 178–222%** — the byte-weighted aggregate is dominated by the
+4 MiB copies, and 4 MiB is the size this project already calls unmeasurable
+(117–197% spread). A minimum over 45 samples of a 200%-spread quantity is an
+extreme order statistic, not a floor, and the run-to-run swing of the D1
+aggregate (−15.29% to +5.64% for the same kernel, the same seeds, the same
+tree) is larger than the 1.5% acceptance threshold. D2 is worse in a different
+way: every size is ≤ 4 KiB, so the ~40 ns per-call clock is ~80% of the
+measured time and the aggregate measures the clock.
+
+### What does resolve: the per-size rows
+
+The representative mixed-mode number is the **median over the 45 reps** of each
+target, not the minimum: the minimum is not meaningful when the per-rep spread
+is two orders of magnitude larger than in fixed mode. Medians over the 9
+target x repetition cells, with the fixed-mode delta for comparison:
+
+| size | mixed-mode delta (znver2 / znver3 / v3) | median | cells ≥ 0 | fixed-mode delta | |
+|---|--:|--:|--:|--:|---|
+| 8 B | +8.76 / +37.02 / +13.19% | +14.96% | 7 of 9 | +25.49% | clock-bound |
+| 16 B | +20.52 / +43.56 / +22.42% | +22.42% | 9 of 9 | +38.02% | clock-bound |
+| 32 B | −6.00 / +25.97 / +13.59% | +14.53% | 6 of 9 | +25.49% | clock-bound |
+| 64 B | +11.23 / +36.61 / +22.61% | +22.66% | 9 of 9 | +25.10% | clock-bound |
+| 128 B | +0.02 / +13.04 / −23.91% | +0.02% | 5 of 9 | +10.11% | clock-bound |
+| 256 B | −27.00 / +0.42 / −16.66% | −16.66% | 2 of 9 | +8.41% | clock-bound |
+| 512 B | +0.35 / −15.66 / −36.15% | −15.66% | 3 of 9 | +14.59% | clock-bound |
+| 1 KiB | +12.38 / +11.65 / +2.13% | +11.65% | 8 of 9 | −1.41% | |
+| 4 KiB | −56.03 / −51.49 / −54.79% | **−55.09%** | **0 of 9** | +0.00% | |
+| 16 KiB | −31.28 / −33.81 / −31.08% | **−31.83%** | **0 of 9** | −2.28% | |
+| 64 KiB | −35.62 / −36.03 / −29.97% | **−32.23%** | **0 of 9** | −0.72% | |
+| 256 KiB | −27.32 / −26.74 / −25.88% | **−26.74%** | **0 of 9** | −1.33% | |
+| 1 MiB | −26.87 / −27.64 / −24.07% | **−27.04%** | **0 of 9** | +12.58% | |
+| 4 MiB | +7.32 / +8.58 / +12.50% | +9.61% | 9 of 9 | +0.16% | unmeasurable size |
+
+"clock-bound" means the per-copy time is not measurable at that size: a clock
+pair costs ~40 ns here and an 8 B copy takes ~2.7 ns, so the per-size rate at
+those sizes is the clock's jitter around the copy. **Those six rows are not
+reportable**, and the question they were meant to answer — whether the 8–64 B
+wins depend on a warm predictor — is **unanswered by this instrument**, not
+answered "no".
+
+### Two controls that make the negative result credible
+
+1. **The per-call timing is fair.** A diagnostic sequence of a single size
+   (`--mixed-size N`, not one of the declared distributions) gives, at 1 KiB,
+   17.96 ns/copy for glibc and 17.66 for the kernel, and at 4 KiB 58.33 and
+   58.27 — agreement to 0.1%, and the same shapes as the fixed-mode numbers
+   plus the residual overhead bias. So the loss below is caused by the
+   *interleaving*, not by the instrument.
+2. **The implementation order no longer moves the result.** The same D1
+   sequence, run with the implementations in registry order and reversed, gives
+   aggregate deltas of +11.96% and +11.33% (0.6 points apart; before the
+   warm-up fix the two orders were 5.7 points apart and the 8 B per-size delta
+   flipped sign).
+
+### What the mechanism is, and what it is not
+
+The size that carries the most bytes in D1 is 4 MiB, and 4 MiB is the size
+this project already calls unmeasurable, so the byte-weighted aggregate is
+largely a statement about 4 MiB. The rows that resolve — 1 KiB to 1 MiB — say
+the kernel is 27–55% behind glibc in a mixed stream, unanimously (0 of 9 cells
+at each of the five sizes). The mechanism is not isolated: this host exposes
+no L3/LLC events, so "the cold destination and a cold predictor cost this
+kernel more than they cost glibc" is an **inference**, while the measurement is
+the nine cells.
+
+### Q5 applied
+
+A1 is not met, so the fixed-size wins do not generalise to a mixed-size
+workload, and the headline says so. The wording states precisely what failed:
+the mixed-size **aggregate** is not a verdict (it is dominated by the
+unmeasurable 4 MiB copies, and the pre-registered minimum-over-45-reps floor
+is not a meaningful statistic at a 200% per-rep spread), and where the
+mixed-size measurement does resolve — 4 KiB to 1 MiB — the kernel is **27–55%
+behind glibc**. The sizes at and below 512 B are reported as unmeasured, not as
+failures.
