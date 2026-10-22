@@ -184,3 +184,56 @@ times** as three independent repetitions, so the run-to-run spread is visible.
 * No new tier, no new statistic, no threshold moved after the fact.
 * Every number in the report cites its log path; the mixed-mode runs write
   logs under `docs/data/raw/`.
+
+## Amendment after the code review (committed before any measurement)
+
+A code review of the harness change found four defects that would have made
+the numbers mean the wrong thing. All four are fixed; the criteria above are
+unchanged. The amendments are implementation details, not changes of what is
+measured.
+
+1. **The canary pass wrote outside the allocation.** The canary base was
+   `g_dst`, but the allocation's slack is *after* the returned pointer, so the
+   lower canary region was 64 bytes outside the mapping — overwriting glibc's
+   mmap chunk header on every iteration. The canary base is now
+   `g_dst + VCAN`, as `verify_large()` already does, and the buffers are freed
+   on the mixed exit path (the leak was hiding the corruption).
+2. **No warm-up.** The implementation that ran first in the registry paid a
+   cold-predictor and cold-cache penalty the others did not: the aggregate
+   moved by 5.7 points and the 8 B per-size delta by 44 points **with a sign
+   flip** between the two orders. Every implementation now runs the sequence
+   once, untimed, before its timed pass, so all of them start from the same
+   predictor and cache state. A `--mixed-reverse` diagnostic flag was added so
+   the order sensitivity can be re-measured.
+3. **The timer overhead was taken from the fixed mode's batch calibration.**
+   That constant is subtracted once per *batch* there (up to 1024 copies), so
+   its per-copy error is `e/1024`; subtracting it per *call* makes it `e`,
+   1024x larger, and the in-situ cost of a clock pair is not the cost of a
+   clock pair in a tight loop. A null kernel is now timed through the same
+   call path, inside the same loop, every 64 iterations, and the median of
+   those is the overhead that applies. It is common to every implementation in
+   a rep, so it cancels in the deltas.
+4. **The per-copy residual was clamped at zero.** Clamping is a non-linear
+   transform whose bias depends on the true copy time, so it distorts the
+   comparison between two kernels. The residual is now left unclamped and the
+   count of negative residuals is reported: a negative residual means the
+   clock's jitter exceeded the copy, which is the honest reading at the
+   smallest sizes, where a 2.7 ns copy is measured on a ~40 ns clock.
+
+Also: the mixed path now runs the **fixed-mode `--verify`** for every selected
+implementation before the campaign, so the mixed run is not the only
+correctness gate; the size set is checked against the allocation; `--mixed`
+warns that it ignores `--sizes` and `--quick`; and the real iteration counts
+are recorded: **3990 per rep for D1** (285 copies of each of the 14 sizes) and
+**3996 for D2** (444 copies of each of the 9), because the sequence length is
+rounded down to a multiple of the size set so the multiset stays exactly
+balanced. The per-size counts are as declared; the sequence length is 3990
+rather than 4000, and the report states it.
+
+**What this mode cannot do, and does not claim to do.** A clock pair costs
+~40 ns on this host and an 8 B copy takes ~2.7 ns, so the 8–64 B per-size
+rates are a measurement of the clock's jitter around the copy, not of the
+copy. The negative-residual count is reported for every run, and the per-size
+numbers must be read with it. The aggregate is byte-diluted by the same
+overhead and is not affected: the overhead is a constant per call, common to
+every implementation and every size, so it cancels in the deltas.

@@ -141,6 +141,7 @@ typedef struct {
     int    quick;
     int    thp;
     int    mixed;            /* Phase 10: run the mixed-size campaign */
+    int    mixed_reverse;    /* diagnostic: run the impls in reverse order */
     const char *mixed_dist;  /* "d1" (attempt 1) or "d2" (attempt 2) */
     uint64_t seed;           /* mixed-mode sequence seed */
     const char *impl_filter;
@@ -162,7 +163,7 @@ static opts_t g_opt = {
     .warmup_max = 10, .iters_max = 100, .iters_min = 3,
     .budget_s = 1.0, .warm_budget_s = 0.5,
     .verify = 1, .quick = 0, .thp = 0, .impl_filter = NULL,
-    .mixed = 0, .mixed_dist = "d1", .seed = 0,
+    .mixed = 0, .mixed_dist = "d1", .mixed_reverse = 0, .seed = 0,
     .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL, .arg4 = NULL,
     .reps = 5,        /* >= 3 required; 5 chosen to damp the noise measured in Phase 2 */
     .dump_reps = 0, .impl_buf = { 0 }, .impl_buf_len = 0,
@@ -1127,23 +1128,51 @@ static void usage(void)
  *     that size, divided by (count * size);
  *   - the published statistic is the minimum over the reps, as in fixed mode.
  *
- * Two implementation details the pre-registration does not pin down:
+ * Implementation notes the pre-registration does not pin down, and why:
  *
- *   1. Each copy is timed individually and the calibrated timer overhead is
- *      subtracted, exactly as fixed mode subtracts it from a batch.  The
- *      overhead is a constant per call and is therefore COMMON to every
- *      implementation and to every size, so it cancels in the per-size deltas;
- *      what is left is the overhead's spread, which the minimum over the reps
- *      suppresses.  The alternative - timing a group of mixed copies - cannot
- *      attribute a group's time to the sizes inside it, and the per-size
- *      numbers are what this phase is for.
- *   2. The canary discipline runs in a SEPARATE, untimed pass over the same
+ *   1. WARM-UP.  Every implementation runs the sequence once, untimed, before
+ *      its timed pass.  Without it the implementation that runs first in the
+ *      registry pays a cold-predictor and cold-cache penalty that the others do
+ *      not, and the order alone moved the aggregate by 5.7 points and the 8 B
+ *      per-size delta by 44 points, with a sign flip - against a 1.5% floor.
+ *      The warm-up also puts every implementation's destination buffer in the
+ *      same state before its timed pass.
+ *   2. THE TIMER OVERHEAD IS CALIBRATED IN SITU, not taken from the fixed
+ *      mode's batch calibration.  The fixed mode subtracts one overhead from a
+ *      batch of up to 1024 copies, so its per-copy overhead error is e/1024;
+ *      subtracting a per-call constant makes it e, 1024x larger, and the
+ *      in-situ cost of a clock pair is not the same as the cost of a clock pair
+ *      in a tight loop (a copy in between evicts what the clock read needs).
+ *      So a null kernel is timed through the SAME call path, inside the same
+ *      loop, every 64 iterations; the median of those is the overhead that
+ *      actually applies here, and it is reported.
+ *   3. THE CANARY DISCIPLINE RUNS IN A SEPARATE, UNTIMED PASS over the same
  *      sequence.  Re-arming and checking a 64 B canary on both sides of the
  *      destination for every copy moves more memory than an 8 B copy itself,
  *      and putting that inside the timed region would measure the harness
- *      instead of the kernel.
+ *      instead of the kernel.  The canary regions move with n, so the check is
+ *      per copy and immediate - a canary written by a legitimate later copy
+ *      must not be mistaken for an overwrite.  The canary base is
+ *      g_dst + VCAN, inside the allocation: the allocation's slack is AFTER
+ *      the returned pointer, so a canary at g_dst - 64 would be outside it.
+ *   4. THE TIME BUDGET IS DISABLED in mixed mode: in fixed mode it truncates a
+ *      case at 50 ms (which is why 1 MiB ran 514-1639 of 4000 iterations), and
+ *      in mixed mode every implementation must run the identical full sequence
+ *      or the byte totals would differ and the comparison would not be on
+ *      identical work.
+ *
+ * What this mode CANNOT do, and does not claim to do: resolve the per-copy
+ * cost of the smallest sizes.  A clock pair costs ~40 ns on this host and an
+ * 8 B copy takes ~2.7 ns, so the 8-64 B per-size rates are a measurement of
+ * the clock's jitter around the copy, not of the copy.  The clamping fraction
+ * is reported for every run, and the per-size numbers must be read with it.
+ * The aggregate is byte-diluted by the same overhead and is not affected: the
+ * overhead is a constant per call and is common to every implementation and
+ * every size, so it cancels in the deltas.
  */
 #define MIXED_MAX_SIZES 32
+#define MIXED_CAL_EVERY 64      /* null-kernel calibration interval */
+#define MIXED_CAL_MAX   4096
 
 /* D1: uniform over the 14 measured sizes.  D2: uniform over the 9 sizes
  * <= 4 KiB.  Both are declared in the pre-registration; D2 is the attempt-2
@@ -1187,6 +1216,14 @@ static void mixed_build(size_t *seq, size_t nseq, const size_t *sizes,
     }
 }
 
+/* A null copy: the same call path, no work.  Used to calibrate the timer
+ * overhead where it actually applies - inside the mixed loop, next to the
+ * copies, not in a tight loop of its own. */
+static void mixed_null_copy(void *d, const void *s, size_t n)
+{
+    (void)d; (void)s; (void)n;
+}
+
 typedef struct {
     double total_ns;
     double total_bytes;
@@ -1195,6 +1232,8 @@ typedef struct {
     size_t size_count[MIXED_MAX_SIZES];
     int    cpu_a, cpu_b, migrated;
     size_t iters;
+    size_t clamped;        /* iterations whose measured time was below zero */
+    double overhead_ns;    /* the in-situ timer overhead used */
 } mixed_rep_t;
 
 static int mixed_size_index(const size_t *sizes, size_t nsz, size_t n)
@@ -1204,22 +1243,31 @@ static int mixed_size_index(const size_t *sizes, size_t nsz, size_t n)
     return -1;
 }
 
-/* The timed pass.  One clock pair per copy, overhead subtracted, exactly as
- * fixed mode subtracts it from a batch. */
+/* The timed pass.  One clock pair per copy; the in-situ overhead (measured
+ * with a null kernel through the same path, inside the same loop) is
+ * subtracted. */
 static void mixed_run_copy(const impl_t *im, const size_t *seq, size_t nseq,
-                           const size_t *sizes, size_t nsz, mixed_rep_t *o)
+                           const size_t *sizes, size_t nsz, mixed_rep_t *o,
+                           double overhead_ns)
 {
     copy_fn volatile cfn = im->copy;
     memset(o, 0, sizeof *o);
     o->cpu_a = sched_getcpu();
+    o->overhead_ns = overhead_ns;
     for (size_t k = 0; k < nseq; k++) {
         size_t n = seq[k];
         int si = mixed_size_index(sizes, nsz, n);
         double a = ns_now();
         cfn(g_dst, g_src, n);
         double b = ns_now();
-        double per = b - a - g_timer_overhead_ns;
-        if (per < 0.0) per = 0.0;
+        double per = b - a - overhead_ns;
+        /* NOT clamped: clamping is a non-linear transform whose bias depends
+         * on the true copy time, so it would distort the comparison between
+         * two kernels.  A negative residual means the clock's jitter exceeded
+         * the copy - which is the honest reading at the smallest sizes, where
+         * a 2.7 ns copy is measured on a ~40 ns clock.  The count is
+         * reported. */
+        if (per < 0.0) o->clamped++;
         o->total_ns += per;
         o->total_bytes += (double)n;
         if (si >= 0) {
@@ -1235,16 +1283,36 @@ static void mixed_run_copy(const impl_t *im, const size_t *seq, size_t nseq,
     o->iters = nseq;
 }
 
+/* The in-situ timer overhead: a null kernel through the same call path,
+ * inside the same loop, so the measurement sees the same cache state a real
+ * copy leaves behind.  The median of those is the overhead that applies. */
+static double mixed_calibrate_overhead(const size_t *seq, size_t nseq)
+{
+    static double cal[MIXED_CAL_MAX];
+    size_t ncal = 0;
+    for (size_t k = 0; k < nseq && ncal < MIXED_CAL_MAX; k += MIXED_CAL_EVERY) {
+        double a = ns_now();
+        mixed_null_copy(g_dst, g_src, seq[k]);
+        double b = ns_now();
+        cal[ncal++] = b - a;
+    }
+    if (!ncal) return g_timer_overhead_ns;
+    qsort(cal, ncal, sizeof cal[0], cmp_double);
+    return cal[ncal / 2];
+}
+
 /* The untimed correctness pass: the same sequence, with the canary regions
  * re-armed before every copy and checked immediately after it.  The next
  * copy's size differs from this one's, so a canary written by a legitimate
- * later copy must not be mistaken for an overwrite. */
+ * later copy must not be mistaken for an overwrite.  The canary base is
+ * g_dst + VCAN: the allocation's slack is after the returned pointer, so a
+ * canary below g_dst would be outside the allocation. */
 static int mixed_run_canary(const impl_t *im, const size_t *seq, size_t nseq)
 {
     copy_fn volatile cfn = im->copy;
+    unsigned char *d = g_dst + VCAN;
     for (size_t k = 0; k < nseq; k++) {
         size_t n = seq[k];
-        unsigned char *d = g_dst;
         memset(d - VCAN, VCAN_BYTE, VCAN);
         memset(d + n, VCAN_BYTE, VCAN);
         cfn(d, g_src, n);
@@ -1267,22 +1335,25 @@ static int mixed_run_canary(const impl_t *im, const size_t *seq, size_t nseq)
 static void mixed_csv_header(void)
 {
     printf("impl,target,dist,seed,rep,scope,size_bytes,count,"
-           "ns_total,bytes_total,ns_per_byte,cpu_a,cpu_b,migrated\n");
+           "ns_total,bytes_total,ns_per_byte,overhead_ns,clamped,"
+           "cpu_a,cpu_b,migrated\n");
 }
 
 static void mixed_csv_row(const impl_t *im, const char *dist, uint64_t seed,
                           unsigned rep, const char *scope,
                           size_t size, size_t count, double ns, double bytes,
+                          double overhead_ns, size_t clamped,
                           int cpu_a, int cpu_b, int migrated)
 {
-    printf("%s,%s,%s,%llu,%u,%s,%zu,%zu,%.4f,%.0f,%.6f,%d,%d,%d\n",
+    printf("%s,%s,%s,%llu,%u,%s,%zu,%zu,%.4f,%.0f,%.6f,%.4f,%zu,%d,%d,%d\n",
            im->name, TARGET_NAME, dist, (unsigned long long)seed, rep,
            scope, size, count, ns, bytes,
-           bytes > 0.0 ? ns / bytes : 0.0, cpu_a, cpu_b, migrated);
+           bytes > 0.0 ? ns / bytes : 0.0, overhead_ns, clamped,
+           cpu_a, cpu_b, migrated);
 }
 
-/* One mixed campaign: for every window and rep, build the sequence, then run
- * every implementation over that one array. */
+/* One mixed campaign: for every rep, build the sequence, then run every
+ * implementation over that one array. */
 static int mixed_campaign(const char *dist, uint64_t seed0)
 {
     size_t nsz = 0;
@@ -1290,12 +1361,27 @@ static int mixed_campaign(const char *dist, uint64_t seed0)
     size_t nseq = g_opt.iters_max;
     if (nseq < nsz) nseq = nsz;
     nseq = (nseq / nsz) * nsz;              /* keep the multiset balanced */
+    if (nseq % nsz) {                       /* defensive: never leave a tail */
+        fprintf(stderr, "harness: mixed sequence not divisible by the size "
+                        "set\n");
+        return 1;
+    }
+    for (size_t i = 0; i < nsz; i++) {
+        if (sizes[i] > g_max_size) {
+            fprintf(stderr, "harness: mixed size %zu exceeds the allocation "
+                            "(%zu bytes)\n", sizes[i], g_max_size);
+            return 1;
+        }
+    }
 
     size_t *seq = malloc(nseq * sizeof *seq);
     if (!seq) { fprintf(stderr, "harness: OOM\n"); return 1; }
 
     unsigned reps = g_opt.reps ? g_opt.reps : 1;
-    if (reps > MAX_REPS) reps = MAX_REPS;
+    if (reps > MAX_REPS) {
+        fprintf(stderr, "harness: --reps clamped to %u\n", MAX_REPS);
+        reps = MAX_REPS;
+    }
 
     fprintf(stderr, "harness: MIXED dist=%s sizes=%zu iters=%zu reps=%u "
                     "(no time budget: every implementation must run the "
@@ -1308,19 +1394,31 @@ static int mixed_campaign(const char *dist, uint64_t seed0)
         /* one array per rep, shared by every implementation */
         uint64_t rep_seed = seed;
         mixed_build(seq, nseq, sizes, nsz, &seed);
-        for (size_t ii = 0; ii < g_impl_count; ii++) {
+        /* the in-situ overhead, measured in this loop's context and common
+         * to every implementation in this rep */
+        double oh = mixed_calibrate_overhead(seq, nseq);
+        for (size_t k = 0; k < g_impl_count; k++) {
+            size_t ii = g_opt.mixed_reverse ? (g_impl_count - 1 - k) : k;
             const impl_t *im = &g_impls[ii];
             if (!want_impl(im) || !im->copy) continue;
             mixed_rep_t o;
-            mixed_run_copy(im, seq, nseq, sizes, nsz, &o);
+            /* warm-up: the same sequence, untimed, so that every
+             * implementation starts its timed pass with the same predictor
+             * and cache state.  Without it the registry order alone moved the
+             * aggregate by 5.7 points and the 8 B per-size delta by 44. */
+            mixed_rep_t w;
+            mixed_run_copy(im, seq, nseq, sizes, nsz, &w, oh);
+            mixed_run_copy(im, seq, nseq, sizes, nsz, &o, oh);
             if (o.migrated) nmigrated++;
             mixed_csv_row(im, dist, rep_seed, r, "agg", 0, nseq, o.total_ns,
-                          o.total_bytes, o.cpu_a, o.cpu_b, o.migrated);
+                          o.total_bytes, o.overhead_ns, o.clamped,
+                          o.cpu_a, o.cpu_b, o.migrated);
             for (size_t si = 0; si < nsz; si++) {
                 if (!o.size_count[si]) continue;
                 mixed_csv_row(im, dist, rep_seed, r, "size", sizes[si],
                               o.size_count[si], o.size_ns[si],
-                              o.size_bytes[si], o.cpu_a, o.cpu_b, o.migrated);
+                              o.size_bytes[si], o.overhead_ns, o.clamped,
+                              o.cpu_a, o.cpu_b, o.migrated);
             }
             /* the untimed correctness pass over the same array */
             if (g_opt.verify && mixed_run_canary(im, seq, nseq)) {
@@ -1368,12 +1466,18 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--mixed") && i + 1 < argc) {
             g_opt.mixed = 1;
             g_opt.mixed_dist = argv[++i];
+            if (g_opt.nsizes)
+                fprintf(stderr, "harness: --mixed ignores --sizes (the size "
+                                "set is the distribution's)\n");
+            if (g_opt.quick)
+                fprintf(stderr, "harness: --mixed ignores --quick\n");
             if (strcmp(g_opt.mixed_dist, "d1") &&
                 strcmp(g_opt.mixed_dist, "d2")) {
                 fprintf(stderr, "harness: --mixed needs d1 or d2\n");
                 return 2;
             }
         }
+        else if (!strcmp(a, "--mixed-reverse")) g_opt.mixed_reverse = 1;
         else if (!strcmp(a, "--seed") && i + 1 < argc)
             g_opt.seed = strtoull(argv[++i], NULL, 0);
         else if (a[0] == '-' && a[1] == '-')              g_opt.mode = a;
@@ -1423,8 +1527,18 @@ int main(int argc, char **argv)
     g_core_ghz = calib_core_ghz();
 
     if (g_opt.mixed) {
-        /* the buffers are freed by the normal exit path; do not free them here */
-        return mixed_campaign(g_opt.mixed_dist, g_opt.seed);
+        /* The fixed-mode verify is the project's real correctness gate; run it
+         * for every selected implementation before the mixed campaign, so the
+         * mixed run is not the only thing standing between the kernel and a
+         * published number. */
+        int rc = 0;
+        if (g_opt.verify)
+            for (size_t i = 0; i < g_impl_count; i++)
+                if (want_impl(&g_impls[i]) && verify_impl(&g_impls[i])) rc = 1;
+        if (rc) { free_bufs(); return rc; }
+        rc = mixed_campaign(g_opt.mixed_dist, g_opt.seed);
+        free_bufs();
+        return rc;
     }
 
     /* Guard rail: a PMU that is emulated, multiplexed, or read with the wrong
