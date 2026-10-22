@@ -4,6 +4,11 @@ Every idea below was built or written, measured, and lost. They are here because
 tuning record that only lists wins is a sales sheet. Each entry says what was
 tried, what the measurement said, and whether the code ships.
 
+**Every measurement in this file is a fixed-size, warm-cache measurement** —
+one size copied in a tight loop, with the branch predictor trained on it —
+unless the entry says otherwise. The last entry is the mixed-size measurement,
+which is the honest comparator for a real workload.
+
 ## Hybrid dispatcher — ships, in `experiments/hybrid/`
 
 A size-class dispatch layer over the ladder, with the table generated from
@@ -40,7 +45,7 @@ tool for this kernel, and the plain build ships.
 `src/rungs/avx2_nt.c` is a real rung with a fixed size gate. A sweep with the gate
 forced down to 64 B found **no size at which NT wins on any target**: throughput
 was flat at 17–22 GB/s from 512 KiB to 4 MiB while the cached rung scaled to
-34–81 GB/s, a 69–372% loss. At 4 MiB, where the `sfence` is negligible against a
+34–81 GB/s, a 69–372% loss on fixed-size workloads. At 4 MiB, where the `sfence` is negligible against a
 ~100 µs copy, it was still ~1.9x slower. The cause is an inference — this host
 exposes no L3/LLC events, so the "bandwidth-capped streaming write path"
 explanation is labelled as inference while the loss is the measurement. Verdict:
@@ -65,10 +70,12 @@ wins the codegen argument; the asm rung stays as the control that proves it.
 
 ## PGO and LTO — not shipped
 
-PGO's apparent 25% win at 16–32 B turned out to be the **entry chain**, not the
+PGO's apparent 25% win at 16–32 B (fixed-size workloads) turned out to be the
+**entry chain**, not the
 compiler: the same improvement was reproduced statically with one compare and no
 profile in the build (1.5 ns against PGO's 1.9 ns). `-flto` was neutral almost
-everywhere, regressed 16 B by 9.7% and 128 B by 6.3%, flipped sign at 32 B across
+everywhere, regressed 16 B by 9.7% and 128 B by 6.3% on fixed-size workloads,
+flipped sign at 32 B across
 targets, and produced one certified win (512 B, one target) — not enough to
 demand a link-time build. Verdict: neither is justified, and the probe TUs that
 measured them are not part of the public build.
@@ -78,14 +85,14 @@ measured them are not part of the public build.
 The grid varied unroll factor (4/6/8/12), the 32 B-aligned main loop, and prefetch
 distance across sizes. Only unroll 4 with the aligned loop and a gated +128 B
 prefetch survived; unroll 8/12 and the aligned loop never produced a certified
-result that the simpler shape did not already have, and `-funroll-loops` on its
+result (on fixed-size workloads) that the simpler shape did not already have, and `-funroll-loops` on its
 own cost up to 19%. Verdict: the shipped kernel is the simplest point in the
 grid that cleared the floors.
 
 ## The 128 B block-pair shape — hypothesis CONFIRMED, candidate REJECTED
 
-The shipped kernel is a certified loss at 128 B (−10.04% at both the floor and
-the median, on all three targets). The cause is structural, and the Phase 7
+The shipped kernel was a certified loss at 128 B in the Phase 6 reference
+campaign (−10.04% at both the floor and the median, on all three targets). The cause is structural, and the Phase 7
 campaign confirmed it.
 
 **The defect.** The class ladder's rule is that a class window is `(H, 2H]` and
@@ -275,7 +282,8 @@ not an object-time one.
 
 ## 1 MiB row — audited, not retracted
 
-Published: +8–13% vs glibc at 1 MiB at the floor, and level to 2.7% behind at the
+Published: +8–13% vs glibc at 1 MiB at the floor on fixed-size workloads, and
+level to 2.7% behind at the
 median. **Not retracted** — the number reproduces.
 
 A Phase 6 audit re-derived every published row from the reference campaign's raw
@@ -299,7 +307,8 @@ reproduces" into "it reproduces, here is the command".
 
 ## 128 B — the trade we accepted (Phase 7)
 
-The shape that wins 128 B (**+10.11% vs glibc, the first win at this size**)
+The shape that wins 128 B (**+10.11% vs glibc on fixed-size workloads, the
+first win at this size**)
 costs 512 B 2.24 points of margin, because the window body that dispatches the
 64-byte pair sits *before* the flat class chain: any code added to that body
 displaces the chain, and the 512 B path's position in the code stream moves with
@@ -323,7 +332,8 @@ That is a structural project, out of scope for Phase 7.
 
 ## 512 B — bimodal distribution note
 
-512 B measures in two modes on this host — **fast ~741 ns, slow ~1212 ns per
+512 B measures in two modes on this host, on fixed-size workloads — **fast
+~741 ns, slow ~1212 ns per
 128-copy batch** — and the mode split is a **host event, not a kernel property**
 (Phase 7.3a Q1: the slow mode is contiguous in time and spans three different
 implementations, and the 1 B/store rungs are immune to it because they are
@@ -343,7 +353,8 @@ Full distributions: `docs/data/phase7_p72b_acceptance_summary.csv` (the
 
 ## 1 MiB — closed as parity after two attempts (Phase 8)
 
-The 1 MiB row is a **win at the floor** (+9 to +13% against glibc) and
+The 1 MiB row is a **win at the floor** (+9 to +13% against glibc on fixed-size
+workloads) and
 **parity at the median** (−1.6% to −2.3%). Two attempts were made to move the
 median, both pre-registered, both with a shape control, and both rejected.
 
@@ -407,7 +418,8 @@ a **prefetch distance of 4096 B** (instead of 128 B, inside a 512 KiB–2 MiB
 band) and a **prefetch coverage pair** (a second prefetch at +192, so both
 64 B lines of the next iteration are covered in software). **Both failed P2**
 (the floor win was lost: +8.12 / +7.56 / +7.36% and +10.31 / +8.50 / +10.90%
-against the reference's +12.58 / +11.10 / +9.42%) **and P3** (the median did
+against the reference's +12.58 / +11.10 / +9.42%, both on mixed-size
+workloads) **and P3** (the median did
 not move: −4.35 / −3.61 / −2.80% and −2.14 / −1.85 / −2.32%).
 
 **The mechanism.** At 1 MiB the copy runs at either the **store-port ceiling**
@@ -429,7 +441,7 @@ decompositions, is in the section above and in
 
 Quiet-window re-certification moved 16 KiB from −2.28 / −2.41 / −2.40
 (Phase 7.4, host-limited) to **−1.19 / −1.19 / −0.12** (Phase 8.2, quiet
-window) — inside the 1.5% floor on all three targets. **Not caused by any code
+window) on fixed-size workloads — inside the 1.5% floor on all three targets. **Not caused by any code
 change**: the promoted kernel was already **+1.16% faster** than the previous
 deliverable at this size, and the same kernel read −1.19% there in the
 Phase 7.4 reference campaign. The Phase 7.4 number was a host artifact — the
@@ -440,14 +452,94 @@ certified row moved.
 
 ## 256 B — conditional, documented as structural (Phase 8.2)
 
-A1_256 failed: the median did not reach +1.5% in a quiet window (+0.00 /
-−0.63 / +0.00%). The row stays **a certified win at the floor** (+8.41% on all
-three targets) and **a tie at the median**. Same bimodal mechanism as 1 MiB;
+A1_256 failed: the median did not reach +1.5% in a quiet window, on fixed-size
+workloads (+0.00 / −0.63 / +0.00%). The row stays **a certified win at the
+floor** (+8.41% on all three targets) and **a tie at the median**. Same bimodal mechanism as 1 MiB;
 no fix was attempted, because the 1 MiB attempts had already closed the
 prefetch mechanism (distance and coverage both measured, both rejected) and
 every other lever was closed by the grid or the NT sweep. Its floor is
 identical to the Phase 7.4 value, and the Phase 7.4 campaign remains its
 reference.
+
+## Mixed-size workloads (Phase 10) — the fixed-size wins do not carry over
+
+Every measurement above is a **fixed-size, warm-cache** measurement. Phase 10
+measured the other case: a stream of **mixed** sizes, where the branch predictor
+is re-learned per call and the destination is not the one the previous call left
+in cache. The pre-registration, the criteria and the full results are in
+[`docs/phase10_preregistration.md`](phase10_preregistration.md); the committed
+logs are `docs/data/raw/phase10_d1_<target>_r<rep>.windows.log` and
+`docs/data/raw/phase10_d2_<target>_r<rep>.windows.log` (18 files), and the
+summaries are `docs/data/phase10_d1_summary.csv` and
+`docs/data/phase10_d2_summary.csv`.
+
+**The two distributions, declared before the measurement:**
+
+* **D1 (attempt 1)** — uniform over the 14 measured sizes (8, 16, 32, 64, 128,
+  256, 512 B, 1 KiB, 4 KiB, 16 KiB, 64 KiB, 256 KiB, 1 MiB, 4 MiB): exactly
+  285 copies of each per rep, 3990 iterations, the size changing from call to
+  call.
+* **D2 (attempt 2)** — uniform over the 9 sizes ≤ 4 KiB (8, 16, 32, 64, 128,
+  256, 512 B, 1 KiB, 4 KiB): exactly 444 copies of each per rep, 3996
+  iterations.
+
+**The aggregate: A1 FAIL.** A1 required the aggregate mixed-mode ns/byte to be
+at least 1.5% better than glibc's, on the same run and the same sequence, on at
+least 2 of 3 targets. **One target of three cleared it** (D1, on the floor
+statistic: znver2 +1.42%, znver3 −2.95%, v3 +2.92% as the median of the three
+repetitions). The D2 numbers are not a verdict at all — +215.12% and −596.06%
+in the same distribution are not a measurement of a kernel.
+
+The reason is structural. In fixed mode a cell's per-rep spread is a few
+percent, so the minimum over 45 reps is a meaningful floor. In mixed mode
+**glibc's own per-rep spread of the aggregate is 178–222%**: the byte-weighted
+aggregate is dominated by the 4 MiB copies, and 4 MiB is the size this project
+already calls unmeasurable. The run-to-run swing of the D1 aggregate for the
+same kernel, the same seeds and the same tree is −15.29% to +5.64%, larger than
+the 1.5% threshold. D2 fails differently: every size is ≤ 4 KiB, so the ~40 ns
+per-call clock is ~80% of the measured time and the aggregate measures the clock.
+
+**What does resolve is the per-size rows** — the median over the 45 reps of each
+target, with the fixed-mode delta beside it:
+
+| size | mixed-mode delta (znver2 / znver3 / v3) | median | cells ≥ 0 | fixed-mode delta |
+|---|--:|--:|--:|--:|
+| 8 B | +8.76 / +37.02 / +13.19% | +14.96% | 7 of 9 | +25.49% |
+| 16 B | +20.52 / +43.56 / +22.42% | +22.42% | 9 of 9 | +38.02% |
+| 32 B | −6.00 / +25.97 / +13.59% | +14.53% | 6 of 9 | +25.49% |
+| 64 B | +11.23 / +36.61 / +22.61% | +22.66% | 9 of 9 | +25.10% |
+| 128 B | +0.02 / +13.04 / −23.91% | +0.02% | 5 of 9 | +10.11% |
+| 256 B | −27.00 / +0.42 / −16.66% | −16.66% | 2 of 9 | +8.41% |
+| 512 B | +0.35 / −15.66 / −36.15% | −15.66% | 3 of 9 | +14.59% |
+| 1 KiB | +12.38 / +11.65 / +2.13% | +11.65% | 8 of 9 | −1.41% |
+| 4 KiB | −56.03 / −51.49 / −54.79% | **−55.09%** | **0 of 9** | +0.00% |
+| 16 KiB | −31.28 / −33.81 / −31.08% | **−31.83%** | **0 of 9** | −2.28% |
+| 64 KiB | −35.62 / −36.03 / −29.97% | **−32.23%** | **0 of 9** | −0.72% |
+| 256 KiB | −27.32 / −26.74 / −25.88% | **−26.74%** | **0 of 9** | −1.33% |
+| 1 MiB | −26.87 / −27.64 / −24.07% | **−27.04%** | **0 of 9** | +12.58% |
+| 4 MiB | +7.32 / +8.58 / +12.50% | +9.61% | 9 of 9 | +0.16% |
+
+**In plain terms: at 4 KiB–1 MiB the kernel is 27–55% behind glibc in a
+mixed-size stream** — 0 of 9 target x repetition cells at each of those five
+sizes — **while at 1 KiB it is +12% and at 4 MiB +10%.** The sizes at and below
+512 B are **untested by this instrument, not refuted**: a clock pair costs
+~40 ns on this host and an 8 B copy takes ~2.7 ns, so the per-copy time at
+those sizes is the clock's jitter around the copy. The question those rows
+were meant to answer — whether the 8–64 B wins depend on a warm predictor — is
+therefore **unanswered**, not answered "no".
+
+**Two controls keep the negative result credible.** A diagnostic single-size
+sequence (not one of the declared distributions) gives, at 1 KiB, 17.96 ns/copy
+for glibc and 17.66 for the kernel, and at 4 KiB 58.33 and 58.27 — agreement
+to 0.1%, so the per-call timing is fair and the loss is caused by the
+interleaving, not by the instrument. And the implementation order no longer
+moves the result: the same D1 sequence in registry order and reversed gives
+aggregate deltas of +11.96% and +11.33%, 0.6 points apart, where before the
+warm-up fix they were 5.7 points apart and the 8 B per-size delta flipped sign.
+
+**The mechanism is not isolated.** This host exposes no L3/LLC events, so "a
+cold destination and a cold predictor cost this kernel more than they cost
+glibc" is an **inference**; the measurement is the nine cells per size.
 
 ## What this list is for
 

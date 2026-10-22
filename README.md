@@ -34,7 +34,7 @@ flags the certified numbers were produced with) and link it. `src/fast.c`
 includes `src/fast_impl.h`, so compile from the repository root or add `-Isrc`.
 **Do not drop `-falign-labels=64`**: without it the 32..64 B path loses the
 64-byte alignment of its out-of-line branch target and that costs 16% at 32 B
-and 64 B — two of the certified wins. Nothing else is required: no allocator,
+and 64 B on fixed-size, warm-cache workloads — two of the certified wins. Nothing else is required: no allocator,
 no runtime init, no CPU dispatch.
 
 The contract is identical to `memcpy` for non-overlapping `src` and `dst`, at
@@ -58,7 +58,7 @@ void *p = memcpy_mid(dst, src, n);
 `memcpy_mid` is **not** part of the general memcpy path. It exists because one
 band of sizes (1 KiB–64 KiB) rewards a different schedule, and a caller who
 knows their workload sits in that band can opt in: 16 KiB is **+6..7%**
-certified on all three targets.[^record] General callers should use
+certified on all three targets on fixed-size, warm-cache workloads.[^record] General callers should use
 `memcpy_fast`. Link `src/mid.c` in addition to `src/fast.c`.
 
 [^record]: **Record-derived.** Certified at measurement time on a quieter host
@@ -115,13 +115,13 @@ moves on `ymm` registers. The EVEX/AVX-512 variant is not selected — this
 silicon has no AVX-512 — and the `rep movsb` path is not used, because it has
 neither ERMS nor FSRM. At 8–64 B, where the copy is two or three nanoseconds,
 that decision *is* the comparison: a 16-byte SSE2 baseline would lose to us by
-more than the 25% we report.
+more than the 25% we report on fixed-size, warm-cache workloads.
 
 **The toolchain is part of the result.** The certified numbers were produced
 with **gcc 16.2.1** and `-O3 -fno-crossjumping -falign-labels=64`. The last
 flag is load-bearing: without it the 32–64 B path loses the 64-byte alignment
-of its out-of-line branch target and that costs **16% at 32 B and 64 B** — two
-of the seven wins. The alignment sensitivity is measured and written up in
+of its out-of-line branch target and that costs **16% at 32 B and 64 B** on
+fixed-size, warm-cache workloads — two of the seven wins. The alignment sensitivity is measured and written up in
 [`docs/NEGATIVE_RESULTS.md`](docs/NEGATIVE_RESULTS.md); the honest reading is
 that the 32–64 B win is a property of *this code at this alignment*, not a
 portable property of the algorithm, and a different compiler may lay the
@@ -164,9 +164,9 @@ lost.
 ## What this is NOT
 
 * **Not a drop-in replacement for glibc in general use.** glibc is level with us
-  from 1 KiB to 64 KiB — at 16 KiB `memcpy_fast` is a tie and `memcpy_mid` is
-  6–7% ahead — and glibc is ported, tested and tuned for far more silicon
-  than this.
+  from 1 KiB to 64 KiB on fixed-size, warm-cache workloads — at 16 KiB
+  `memcpy_fast` is a tie and `memcpy_mid` is 6–7% ahead — and glibc is ported,
+  tested and tuned for far more silicon than this.
 * **Not portable.** The kernels require AVX2 (the ladder includes an SSE2 rung,
   and the reference is scalar, but the shipped kernel is AVX2). The certified
   numbers come from one Zen 2 host; a different core may not reproduce them.

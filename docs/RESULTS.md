@@ -1,8 +1,16 @@
 # Results — memcpy_fast against glibc on Zen 2
 
+**Unless a section says otherwise, every number in this file is a fixed-size,
+warm-cache measurement** — one size copied in a tight loop, on buffers
+allocated once and touched once, single threaded, with the branch predictor
+trained on that one size. That is the best case for a size-specialised kernel.
+The mixed-size measurement, which is the honest comparator for a real workload,
+has its own section below.
+
 ## Final Result Summary
 
-Every size the project measured, in exactly one category each.
+Every size the project measured, in exactly one category each, on fixed-size,
+warm-cache workloads.
 
 | Category | Count | Sizes | Note |
 |---|--:|---|---|
@@ -62,7 +70,8 @@ znver3 and `368680ed8dac9be06d0c1d382b5dfc6c` on v3.
 The promote was measured against the kernel it replaced in the same windows
 (`f4_baseline` in the campaign, the pre-promote F4 verbatim). The trade it makes
 is documented in [NEGATIVE_RESULTS.md](NEGATIVE_RESULTS.md): **128 B is won,
-512 B loses 2.24 points of margin and stays a certified win.** The mechanism is
+512 B loses 2.24 points of margin and stays a certified win on fixed-size
+workloads.** The mechanism is
 in `docs/phase7_3a_mechanism.md`: the window body that dispatches the 64-byte
 pair sits *before* the flat class chain, so the branch that adds it displaces
 the chain, and the 512 B path's position in the code stream moves with it.
@@ -89,8 +98,9 @@ znver2 the 512 B cell is Tier B with a 25% floor — so +10.11% and +14.59% read
 the floors are not.
 
 **128 B is the win that took the most work.** It was a certified loss of
-−10.04% before the promote and is now **+10.11%** on every target — the first
-time this kernel is ahead of glibc at that size. The cause was structural: at
+−10.04% before the promote and is now **+10.11%** on every target on
+fixed-size workloads — the first time this kernel is ahead of glibc at that
+size. The cause was structural: at
 exactly 128 B the window's 128-byte block pair had its head and tail blocks
 coincident, so the kernel issued eight loads and eight stores for a 128 B copy
 where glibc issues four and four. Its own 128 B copy used to cost *more* than
@@ -111,7 +121,7 @@ unsaid.
 ## Certified wins at the floor, conditional at the median
 
 **256 B: a certified win at the floor on all three targets — +8.41% ×3 — and a
-tie at the median.**
+tie at the median, on fixed-size workloads.**
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict | reference |
 |--:|--:|--:|--:|:--:|:--:|:--|
@@ -127,7 +137,8 @@ bimodal, and the same two modes the 1 MiB row shows are visible here.
 
 ## Parity at the median
 
-**1 MiB: a win at the floor, parity at the median — permanently.**
+**1 MiB: a win at the floor, parity at the median on fixed-size workloads —
+permanently.**
 
 | size | Δ_min (znver2 / znver3 / v3) | Δ_med (znver2 / znver3 / v3) | spread% | tier | verdict | reference |
 |--:|--:|--:|--:|:--:|:--:|:--|
@@ -164,8 +175,8 @@ evidence. The full record is in
 
 **4 MiB.** The per-window spread is 117% / 197% / 99% — the campaign's worst
 cell by a wide margin — so nothing at that size is resolvable and nothing is
-claimed. The floor reads +0.16 / +6.91 / +1.49%, which is the spread talking,
-not a result.
+claimed. The floor reads +0.16 / +6.91 / +1.49% on fixed-size workloads, which
+is the spread talking, not a result.
 
 ## Certified losses
 
@@ -173,8 +184,8 @@ not a result.
 
 16 KiB was a certified loss of −2.28 / −2.41 / −2.40% in the Phase 7.4
 campaign. It was re-certified in the Phase 8.2 quiet-window campaign and is
-now a **tie**: −1.19 / −1.19 / −0.12% at the floor, inside the 1.5% floor on
-all three targets. That was not caused by any code change — the promoted
+now a **tie** on fixed-size workloads: −1.19 / −1.19 / −0.12% at the floor,
+inside the 1.5% floor on all three targets. That was not caused by any code change — the promoted
 kernel was already **+1.16 / +0.12 / +1.05% faster** than the kernel it
 replaced at that size. The Phase 7.4 number was a host artifact: the size is
 memory-bound and the row follows the host.

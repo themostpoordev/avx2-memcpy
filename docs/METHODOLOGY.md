@@ -178,7 +178,8 @@ between 6.96 and 11.27 ns, while our kernel's floor moved with it; a later run o
 the same sizes put both back near parity. Nothing in the code changed — the
 `.text` md5 of the shipped object was identical across all of it.
 
-The certified numbers were measured on quieter windows, and the frozen CSVs in
+The certified numbers were measured on quieter windows, on fixed-size
+workloads, and the frozen CSVs in
 `docs/data/` are the authoritative record of those windows. Two consequences:
 
 * **A single-run comparison on a loaded host proves nothing**, in either

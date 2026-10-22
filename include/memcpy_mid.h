@@ -8,7 +8,8 @@
  *
  * Contract:
  *   - 1 KiB <= n <= 64 KiB:  the tuned mid kernel, +6-7% over glibc at 16 KiB on
- *                            Zen 2 (docs/RESULTS.md, Tier A, certified).
+ *                            Zen 2 (docs/RESULTS.md, Tier A, certified, on
+ *                            fixed-size, warm-cache workloads).
  *   - n outside that range:  forwarded to memcpy_fast, which is the right choice
  *                            there. One predicted branch decides.
  *
