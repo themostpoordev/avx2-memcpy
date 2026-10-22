@@ -140,6 +140,9 @@ typedef struct {
     int    verify;
     int    quick;
     int    thp;
+    int    mixed;            /* Phase 10: run the mixed-size campaign */
+    const char *mixed_dist;  /* "d1" (attempt 1) or "d2" (attempt 2) */
+    uint64_t seed;           /* mixed-mode sequence seed */
     const char *impl_filter;
     const char *mode;
     const char *arg1, *arg2, *arg3, *arg4;
@@ -159,6 +162,7 @@ static opts_t g_opt = {
     .warmup_max = 10, .iters_max = 100, .iters_min = 3,
     .budget_s = 1.0, .warm_budget_s = 0.5,
     .verify = 1, .quick = 0, .thp = 0, .impl_filter = NULL,
+    .mixed = 0, .mixed_dist = "d1", .seed = 0,
     .mode = "all", .arg1 = NULL, .arg2 = NULL, .arg3 = NULL, .arg4 = NULL,
     .reps = 5,        /* >= 3 required; 5 chosen to damp the noise measured in Phase 2 */
     .dump_reps = 0, .impl_buf = { 0 }, .impl_buf_len = 0,
@@ -1110,6 +1114,226 @@ static void usage(void)
         "         --sizes A,B,C             explicit size set (default: full list)\n");
 }
 
+/* ------------------------------------------------------------------ mixed mode
+ *
+ * Phase 10.  The pre-registration is docs/phase10_preregistration.md and was
+ * committed before any of this was written.  In short:
+ *
+ *   - the size sequence is pre-generated into an array, and the SAME array is
+ *     fed to every implementation in that rep, so the comparison is on
+ *     identical work;
+ *   - the aggregate is total_ns / total_bytes (byte weighted);
+ *   - the per-size rate is the sum of the times of the iterations that drew
+ *     that size, divided by (count * size);
+ *   - the published statistic is the minimum over the reps, as in fixed mode.
+ *
+ * Two implementation details the pre-registration does not pin down:
+ *
+ *   1. Each copy is timed individually and the calibrated timer overhead is
+ *      subtracted, exactly as fixed mode subtracts it from a batch.  The
+ *      overhead is a constant per call and is therefore COMMON to every
+ *      implementation and to every size, so it cancels in the per-size deltas;
+ *      what is left is the overhead's spread, which the minimum over the reps
+ *      suppresses.  The alternative - timing a group of mixed copies - cannot
+ *      attribute a group's time to the sizes inside it, and the per-size
+ *      numbers are what this phase is for.
+ *   2. The canary discipline runs in a SEPARATE, untimed pass over the same
+ *      sequence.  Re-arming and checking a 64 B canary on both sides of the
+ *      destination for every copy moves more memory than an 8 B copy itself,
+ *      and putting that inside the timed region would measure the harness
+ *      instead of the kernel.
+ */
+#define MIXED_MAX_SIZES 32
+
+/* D1: uniform over the 14 measured sizes.  D2: uniform over the 9 sizes
+ * <= 4 KiB.  Both are declared in the pre-registration; D2 is the attempt-2
+ * distribution and is not chosen after seeing attempt 1. */
+static const size_t MIXED_D1[] = {
+    8, 16, 32, 64, 128, 256, 512, 1024, 4096, 16384, 65536, 262144,
+    1048576, 4194304
+};
+static const size_t MIXED_D2[] = {
+    8, 16, 32, 64, 128, 256, 512, 1024, 4096
+};
+
+static const size_t *mixed_set(const char *id, size_t *n)
+{
+    if (id && !strcmp(id, "d2")) {
+        *n = sizeof MIXED_D2 / sizeof MIXED_D2[0];
+        return MIXED_D2;
+    }
+    *n = sizeof MIXED_D1 / sizeof MIXED_D1[0];
+    return MIXED_D1;
+}
+
+/* A balanced multiset - exactly nseq/nsz copies of every size - shuffled with
+ * a fixed seed.  The shuffle is what puts pressure on the branch predictor
+ * (the sizes change from call to call); the balance is what makes the
+ * per-size numbers comparable between implementations and between reps. */
+static void mixed_build(size_t *seq, size_t nseq, const size_t *sizes,
+                        size_t nsz, uint64_t *seed)
+{
+    size_t per = nseq / nsz;
+    size_t k = 0;
+    for (size_t i = 0; i < nsz; i++)
+        for (size_t j = 0; j < per; j++)
+            seq[k++] = sizes[i];
+    for (size_t i = nseq; i > 1; i--) {
+        uint64_t x = *seed;
+        x ^= x >> 12; x ^= x << 25; x ^= x >> 27; x *= 0x2545F4914F6CDD1Dull;
+        *seed = x;
+        size_t j = (size_t)(x % i);
+        size_t t = seq[i - 1]; seq[i - 1] = seq[j]; seq[j] = t;
+    }
+}
+
+typedef struct {
+    double total_ns;
+    double total_bytes;
+    double size_ns[MIXED_MAX_SIZES];
+    double size_bytes[MIXED_MAX_SIZES];
+    size_t size_count[MIXED_MAX_SIZES];
+    int    cpu_a, cpu_b, migrated;
+    size_t iters;
+} mixed_rep_t;
+
+static int mixed_size_index(const size_t *sizes, size_t nsz, size_t n)
+{
+    for (size_t i = 0; i < nsz; i++)
+        if (sizes[i] == n) return (int)i;
+    return -1;
+}
+
+/* The timed pass.  One clock pair per copy, overhead subtracted, exactly as
+ * fixed mode subtracts it from a batch. */
+static void mixed_run_copy(const impl_t *im, const size_t *seq, size_t nseq,
+                           const size_t *sizes, size_t nsz, mixed_rep_t *o)
+{
+    copy_fn volatile cfn = im->copy;
+    memset(o, 0, sizeof *o);
+    o->cpu_a = sched_getcpu();
+    for (size_t k = 0; k < nseq; k++) {
+        size_t n = seq[k];
+        int si = mixed_size_index(sizes, nsz, n);
+        double a = ns_now();
+        cfn(g_dst, g_src, n);
+        double b = ns_now();
+        double per = b - a - g_timer_overhead_ns;
+        if (per < 0.0) per = 0.0;
+        o->total_ns += per;
+        o->total_bytes += (double)n;
+        if (si >= 0) {
+            o->size_ns[si] += per;
+            o->size_bytes[si] += (double)n;
+            o->size_count[si]++;
+        }
+        /* keep the buffers alive without costing the timed region */
+        g_sink ^= ((volatile unsigned char *)g_dst)[0];
+    }
+    o->cpu_b = sched_getcpu();
+    o->migrated = (o->cpu_a != o->cpu_b);
+    o->iters = nseq;
+}
+
+/* The untimed correctness pass: the same sequence, with the canary regions
+ * re-armed before every copy and checked immediately after it.  The next
+ * copy's size differs from this one's, so a canary written by a legitimate
+ * later copy must not be mistaken for an overwrite. */
+static int mixed_run_canary(const impl_t *im, const size_t *seq, size_t nseq)
+{
+    copy_fn volatile cfn = im->copy;
+    for (size_t k = 0; k < nseq; k++) {
+        size_t n = seq[k];
+        unsigned char *d = g_dst;
+        memset(d - VCAN, VCAN_BYTE, VCAN);
+        memset(d + n, VCAN_BYTE, VCAN);
+        cfn(d, g_src, n);
+        for (size_t i = 1; i <= VCAN; i++) {
+            if (d[-(ptrdiff_t)i] != VCAN_BYTE) {
+                fprintf(stderr, "MIXED VERIFY FAIL %s n=%zu underwrite at %zu\n",
+                        im->name, n, i);
+                return 1;
+            }
+            if (d[n + i - 1] != VCAN_BYTE) {
+                fprintf(stderr, "MIXED VERIFY FAIL %s n=%zu overwrite at %zu\n",
+                        im->name, n, n + i - 1);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void mixed_csv_header(void)
+{
+    printf("impl,target,dist,seed,rep,scope,size_bytes,count,"
+           "ns_total,bytes_total,ns_per_byte,cpu_a,cpu_b,migrated\n");
+}
+
+static void mixed_csv_row(const impl_t *im, const char *dist, uint64_t seed,
+                          unsigned rep, const char *scope,
+                          size_t size, size_t count, double ns, double bytes,
+                          int cpu_a, int cpu_b, int migrated)
+{
+    printf("%s,%s,%s,%llu,%u,%s,%zu,%zu,%.4f,%.0f,%.6f,%d,%d,%d\n",
+           im->name, TARGET_NAME, dist, (unsigned long long)seed, rep,
+           scope, size, count, ns, bytes,
+           bytes > 0.0 ? ns / bytes : 0.0, cpu_a, cpu_b, migrated);
+}
+
+/* One mixed campaign: for every window and rep, build the sequence, then run
+ * every implementation over that one array. */
+static int mixed_campaign(const char *dist, uint64_t seed0)
+{
+    size_t nsz = 0;
+    const size_t *sizes = mixed_set(dist, &nsz);
+    size_t nseq = g_opt.iters_max;
+    if (nseq < nsz) nseq = nsz;
+    nseq = (nseq / nsz) * nsz;              /* keep the multiset balanced */
+
+    size_t *seq = malloc(nseq * sizeof *seq);
+    if (!seq) { fprintf(stderr, "harness: OOM\n"); return 1; }
+
+    unsigned reps = g_opt.reps ? g_opt.reps : 1;
+    if (reps > MAX_REPS) reps = MAX_REPS;
+
+    fprintf(stderr, "harness: MIXED dist=%s sizes=%zu iters=%zu reps=%u "
+                    "(no time budget: every implementation must run the "
+                    "identical sequence)\n", dist, nsz, nseq, reps);
+
+    mixed_csv_header();
+    uint64_t seed = seed0 ? seed0 : 0x9E3779B97F4A7C15ull;
+    int nmigrated = 0;
+    for (unsigned r = 0; r < reps; r++) {
+        /* one array per rep, shared by every implementation */
+        uint64_t rep_seed = seed;
+        mixed_build(seq, nseq, sizes, nsz, &seed);
+        for (size_t ii = 0; ii < g_impl_count; ii++) {
+            const impl_t *im = &g_impls[ii];
+            if (!want_impl(im) || !im->copy) continue;
+            mixed_rep_t o;
+            mixed_run_copy(im, seq, nseq, sizes, nsz, &o);
+            if (o.migrated) nmigrated++;
+            mixed_csv_row(im, dist, rep_seed, r, "agg", 0, nseq, o.total_ns,
+                          o.total_bytes, o.cpu_a, o.cpu_b, o.migrated);
+            for (size_t si = 0; si < nsz; si++) {
+                if (!o.size_count[si]) continue;
+                mixed_csv_row(im, dist, rep_seed, r, "size", sizes[si],
+                              o.size_count[si], o.size_ns[si],
+                              o.size_bytes[si], o.cpu_a, o.cpu_b, o.migrated);
+            }
+            /* the untimed correctness pass over the same array */
+            if (g_opt.verify && mixed_run_canary(im, seq, nseq)) {
+                free(seq);
+                return 1;
+            }
+        }
+    }
+    fprintf(stderr, "harness: mixed done, %d migrated reps\n", nmigrated);
+    free(seq);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *pos[4] = { NULL, NULL, NULL, NULL };
@@ -1141,6 +1365,17 @@ int main(int argc, char **argv)
             }
         }
         else if (!strcmp(a, "--dump-reps")) g_opt.dump_reps = 1;
+        else if (!strcmp(a, "--mixed") && i + 1 < argc) {
+            g_opt.mixed = 1;
+            g_opt.mixed_dist = argv[++i];
+            if (strcmp(g_opt.mixed_dist, "d1") &&
+                strcmp(g_opt.mixed_dist, "d2")) {
+                fprintf(stderr, "harness: --mixed needs d1 or d2\n");
+                return 2;
+            }
+        }
+        else if (!strcmp(a, "--seed") && i + 1 < argc)
+            g_opt.seed = strtoull(argv[++i], NULL, 0);
         else if (a[0] == '-' && a[1] == '-')              g_opt.mode = a;
         else if (npos < 4)                                pos[npos++] = a;
         else { usage(); return 2; }
@@ -1186,6 +1421,11 @@ int main(int argc, char **argv)
     g_timer_overhead_ns = calib_timer_overhead();
     g_tsc_ghz = calib_tsc_ghz();
     g_core_ghz = calib_core_ghz();
+
+    if (g_opt.mixed) {
+        /* the buffers are freed by the normal exit path; do not free them here */
+        return mixed_campaign(g_opt.mixed_dist, g_opt.seed);
+    }
 
     /* Guard rail: a PMU that is emulated, multiplexed, or read with the wrong
      * field layout produces a plausible-looking but wrong core/TSC ratio. A
